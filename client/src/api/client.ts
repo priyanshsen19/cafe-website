@@ -6,8 +6,33 @@
 function resolveBaseUrl(): string {
   const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
   if (!configured) return 'http://localhost:4000';
-  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, '');
-  return `https://${configured.replace(/\/+$/, '')}`;
+
+  const absolute = /^https?:\/\//i.test(configured)
+    ? configured.replace(/\/+$/, '')
+    : `https://${configured.replace(/\/+$/, '')}`;
+
+  /**
+   * Guard against a half-configured deployment.
+   *
+   * Some hosts resolve a service reference to the service *name* rather than
+   * its hostname, which yields something like `https://alaap-api` — a domain
+   * that cannot resolve. The site then loads perfectly and every single API
+   * call fails with an opaque network error, which is a genuinely confusing
+   * thing to debug. Say so loudly instead.
+   */
+  const host = absolute.replace(/^https?:\/\//i, '').split('/')[0] ?? '';
+  const looksResolvable = host.includes('.') || host.startsWith('localhost');
+
+  if (!looksResolvable) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[ALAAP] VITE_API_URL is "${configured}", which resolves to "${absolute}" — that is not a ` +
+        `reachable host, so every API request will fail. Set VITE_API_URL to the API's full URL ` +
+        `(for example https://alaap-api.onrender.com) and rebuild: Vite inlines this at build time.`,
+    );
+  }
+
+  return absolute;
 }
 
 const BASE_URL = resolveBaseUrl();

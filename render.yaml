@@ -77,12 +77,18 @@ services:
     buildCommand: npm ci --include=dev && npm run build:client
     staticPublishPath: client/dist
     envVars:
-      # Render injects the bare hostname; the client prefixes https:// itself.
+      # Set explicitly, not via `fromService`.
+      #
+      # `fromService: property: host` resolves to the *service name*
+      # (`alaap-api`), not its hostname — which the client then turns into
+      # `https://alaap-api`, an invalid domain, and every API call fails with a
+      # network error while the site itself loads perfectly.
+      #
+      # Vite inlines this at BUILD time, so changing it needs a rebuild of the
+      # static site, not just a restart. If the API is deployed under a
+      # different hostname, update this value and redeploy.
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: alaap-api
-          property: host
+        value: https://alaap-api.onrender.com
     routes:
       # Single-page app: every unmatched path is served by index.html so
       # client-side routes like /menu/coffee work on a hard refresh.
