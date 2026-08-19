@@ -325,8 +325,12 @@ Seeded for demonstration only.
 | Kitchen staff | `kitchen@demo-cafe.com` | `KitchenDemo123!` |
 | Customer | `demo@demo-cafe.com` | `DemoCustomer123!` |
 
-The sign-in page lists these and fills the form on tap. Seven more customers exist with order history
-(all using `DemoCustomer123!`).
+Only the **customer** login is printed on the sign-in page, where a tap fills the form. The admin and
+kitchen logins are deliberately not shown there: the deployed build is public, and a page that hands
+every visitor the keys to the order board is not a demo, it's an open till. They live here instead,
+where someone reviewing the project will look and a passer-by won't.
+
+Seven more customers exist with order history (all using `DemoCustomer123!`).
 
 **Try this:** sign in as the customer in one browser and as kitchen staff in another. Move an order on
 the kitchen board and watch the customer's tracking page update without a refresh.

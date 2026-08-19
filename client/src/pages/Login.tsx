@@ -19,11 +19,15 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-const DEMO_ACCOUNTS = [
-  { role: 'Customer', email: 'demo@demo-cafe.com', password: 'DemoCustomer123!' },
-  { role: 'Kitchen', email: 'kitchen@demo-cafe.com', password: 'KitchenDemo123!' },
-  { role: 'Admin', email: 'admin@demo-cafe.com', password: 'AdminDemo123!' },
-];
+/**
+ * Only the customer account is published here.
+ *
+ * The kitchen and admin logins still exist in the seed, because the staff
+ * screens need them — but printing privileged credentials on a public page
+ * hands anyone who finds this build the keys to the order board. A reviewer
+ * who needs them can read the seed; a passer-by shouldn't be handed them.
+ */
+const DEMO_ACCOUNT = { email: 'demo@demo-cafe.com', password: 'DemoCustomer123!' };
 
 export default function Login() {
   useSeo({ title: 'Sign in', canonicalPath: '/login' });
@@ -124,29 +128,23 @@ export default function Login() {
           </Link>
         </p>
 
-        {/* Demo credentials, so a reviewer can get in without signing up. */}
+        {/* A demo customer, so a reviewer can get in without signing up. */}
         <div className="mt-10 rounded-lg border border-border bg-card p-5">
-          <p className="font-sans text-xs font-medium text-foreground">Demo accounts</p>
+          <p className="font-sans text-xs font-medium text-foreground">Demo account</p>
           <p className="mt-1 font-sans text-xs text-muted-foreground">
-            This is a demonstration build. Tap one to fill the form.
+            This is a demonstration build. Tap to fill the form.
           </p>
-          <ul className="mt-3.5 space-y-1.5">
-            {DEMO_ACCOUNTS.map((account) => (
-              <li key={account.email}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setValue('email', account.email, { shouldValidate: true });
-                    setValue('password', account.password, { shouldValidate: true });
-                  }}
-                  className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-secondary"
-                >
-                  <span className="font-sans text-xs font-medium text-foreground">{account.role}</span>
-                  <span className="truncate font-sans text-xs text-muted-foreground">{account.email}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <button
+            type="button"
+            onClick={() => {
+              setValue('email', DEMO_ACCOUNT.email, { shouldValidate: true });
+              setValue('password', DEMO_ACCOUNT.password, { shouldValidate: true });
+            }}
+            className="mt-3.5 flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-secondary"
+          >
+            <span className="font-sans text-xs font-medium text-foreground">Customer</span>
+            <span className="truncate font-sans text-xs text-muted-foreground">{DEMO_ACCOUNT.email}</span>
+          </button>
         </div>
       </div>
     </div>
