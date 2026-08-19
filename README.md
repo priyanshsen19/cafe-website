@@ -339,13 +339,17 @@ Razorpay's test instruments, entered in Checkout's own form:
 
 | Method | Value |
 |---|---|
-| Card | `5267 3181 8797 5449`, any future expiry, any CVV, OTP `1111` |
+| Card | `5267 3181 8797 5449`, any future expiry, any CVV |
 | UPI (success) | `success@razorpay` |
 | UPI (failure) | `failure@razorpay` |
 | Net banking | any bank, then choose success or failure |
 
 Razorpay's widely quoted `4111 1111 1111 1111` is an **international** test card, and accounts
 without international payments enabled reject it outright. The domestic card above works everywhere.
+
+The test-mode OTP screen has no fixed code: **any 4–10 digit number succeeds** (`123456` is as good
+as any), and **fewer than 4 digits fails** — which is the documented way to exercise the failure
+path without hunting for a special card.
 
 ### Methods are discovered, not assumed
 
