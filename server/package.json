@@ -6,8 +6,11 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed:if-empty": "tsx prisma/seed-if-empty.ts",
+    "start:prod": "prisma migrate deploy && npm run seed:if-empty && node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",

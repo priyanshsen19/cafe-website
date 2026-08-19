@@ -503,25 +503,55 @@ a broken image.
 
 ## Deployment
 
-**Database** — any managed Postgres (Neon, Supabase, RDS). Use `prisma migrate deploy`.
+The repository ships a [`render.yaml`](render.yaml) blueprint that provisions all three pieces —
+Postgres, the API, and the static site — in one go.
 
-**API**
+### Render (blueprint)
+
+1. Push this repository to GitHub.
+2. Render → **New → Blueprint** → select the repository.
+3. Apply. Render creates `alaap-db`, `alaap-api` and `alaap-web`, generates the JWT secrets itself,
+   runs `prisma migrate deploy`, and seeds the demo catalogue on the empty database.
+
+**One manual step.** The API needs the site's URL and the site needs the API's URL — that's circular,
+so the blueprint hard-codes `CLIENT_URL: https://alaap-web.onrender.com`. If Render assigns the
+static site a different hostname (because the name was taken), update `CLIENT_URL` on `alaap-api`.
+Until it matches, sign-in fails with a CORS error.
+
+**Free tier caveats.** Free web services sleep after ~15 minutes idle, so the first visit takes
+~30 seconds to wake. Free Postgres instances expire — check Render's current retention before
+relying on the demo data.
+
+### What the deployment does differently
+
+| Concern | Local | Deployed |
+|---|---|---|
+| Schema | `prisma db push` | `prisma migrate deploy` (migration in `server/prisma/migrations`) |
+| Refresh cookie | `SameSite=Lax` | `SameSite=None; Secure; Partitioned` — see below |
+| Payments | `mock` | `mock` + explicit `ALLOW_MOCK_PAYMENTS=true` |
+| Seed | manual | once, only if the database has no products |
+
+**The cookie policy is derived from the deployment shape.** A static host and a service host are
+different sites, and browsers never send a `SameSite=Lax` cookie on a cross-site XHR — so a
+split-domain deploy would have a sign-in that appears to work and then evaporates on reload.
+`server/src/config/cookies.ts` compares `CLIENT_URL` against `SERVER_URL` and switches to
+`SameSite=None; Secure` when they differ in production, keeping the stricter `Lax` locally.
+
+**Payments in the demo.** The server refuses to boot with `PAYMENT_MODE=mock` under
+`NODE_ENV=production` unless `ALLOW_MOCK_PAYMENTS=true` is set deliberately, and then it prints a
+loud banner on every boot. To take real payments: set `PAYMENT_MODE=razorpay`, add
+`RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`, and remove `ALLOW_MOCK_PAYMENTS`.
+
+### Deploying elsewhere
 
 ```bash
-npm run build --workspace server
-node server/dist/index.js
+npm ci --include=dev          # devDeps are needed to build (Prisma CLI, tsc)
+npm run build:server && npm run start:prod
+npm run build:client          # → client/dist, needs VITE_API_URL at build time
 ```
 
-Set `NODE_ENV=production`, real secrets, `PAYMENT_MODE=razorpay` with keys, and `CLIENT_URL` to the
-deployed frontend. Behind a proxy, `trust proxy` is already enabled so rate limiting sees real IPs.
-
-**Client**
-
-```bash
-npm run build --workspace client   # → client/dist
-```
-
-Deploy to any static host with SPA rewrites to `index.html`, and set `VITE_API_URL` at build time.
+Serve `client/dist` from any static host with SPA rewrites to `index.html`. Behind a proxy,
+`trust proxy` is already enabled so rate limiting sees real client IPs.
 
 ---
 

@@ -1,4 +1,16 @@
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000';
+/**
+ * Some hosts (Render blueprints among them) can only inject a bare hostname
+ * when wiring one service to another, so accept either form and normalise to an
+ * absolute https:// URL.
+ */
+function resolveBaseUrl(): string {
+  const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (!configured) return 'http://localhost:4000';
+  if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, '');
+  return `https://${configured.replace(/\/+$/, '')}`;
+}
+
+const BASE_URL = resolveBaseUrl();
 
 /**
  * The access token is deliberately held in memory only. The long-lived refresh

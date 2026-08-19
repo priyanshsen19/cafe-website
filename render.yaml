@@ -1,0 +1,95 @@
+# ALAAP — Render blueprint
+#
+# Defines the whole platform: a Postgres database, the Express API, and the
+# React static site. Create it with Render → New → Blueprint, pointed at this
+# repository.
+#
+# ── One manual step ────────────────────────────────────────────────────────
+# The API needs to know the site's URL (for CORS and the cookie policy) and the
+# site needs to know the API's URL. That's circular, so CLIENT_URL below is set
+# to the hostname Render assigns when `alaap-web` is available. If Render gives
+# the static site a different hostname, update CLIENT_URL on the alaap-api
+# service afterwards — sign-in will fail with a CORS error until it matches.
+
+databases:
+  - name: alaap-db
+    databaseName: alaap
+    user: alaap
+    plan: free
+    region: singapore
+
+services:
+  # ── API ──────────────────────────────────────────────────────────────────
+  - type: web
+    name: alaap-api
+    runtime: node
+    plan: free
+    region: singapore
+    # --include=dev is required: the build needs the Prisma CLI and TypeScript,
+    # and NODE_ENV=production would otherwise make npm skip devDependencies.
+    buildCommand: npm ci --include=dev && npm run build:server
+    # Applies migrations, loads the demo catalogue if the database is empty,
+    # then starts the server.
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: alaap-db
+          property: connectionString
+
+      # Generated once by Render and never shown in the repository.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      - key: JWT_ACCESS_TTL
+        value: 15m
+      - key: JWT_REFRESH_TTL_DAYS
+        value: "30"
+
+      # See the note at the top of this file if CORS fails after deploying.
+      - key: CLIENT_URL
+        value: https://alaap-web.onrender.com
+
+      # ── Payments ──
+      # This is a portfolio demonstration, so the simulated gateway is used and
+      # explicitly acknowledged. To take real payments instead: set
+      # PAYMENT_MODE=razorpay, add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET, and
+      # remove ALLOW_MOCK_PAYMENTS.
+      - key: PAYMENT_MODE
+        value: mock
+      - key: ALLOW_MOCK_PAYMENTS
+        value: "true"
+
+      # Loads the demo menu only when the database has no products at all.
+      - key: SEED_ON_EMPTY
+        value: "true"
+
+  # ── Static site ──────────────────────────────────────────────────────────
+  - type: web
+    name: alaap-web
+    runtime: static
+    buildCommand: npm ci --include=dev && npm run build:client
+    staticPublishPath: client/dist
+    envVars:
+      # Render injects the bare hostname; the client prefixes https:// itself.
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: alaap-api
+          property: host
+    routes:
+      # Single-page app: every unmatched path is served by index.html so
+      # client-side routes like /menu/coffee work on a hard refresh.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable

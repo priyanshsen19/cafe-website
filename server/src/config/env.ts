@@ -18,6 +18,16 @@ const shouldOverride = process.env.NODE_ENV !== 'production' && process.env.NODE
 config({ path: path.resolve(__dirname, '../../.env'), override: shouldOverride });
 
 /**
+ * Render (and most PaaS hosts) expose the service's own public URL. Preferring
+ * it means SERVER_URL doesn't have to be hand-copied back into the dashboard
+ * after the first deploy — which matters because the cookie policy is derived
+ * from whether the client and API are on the same host.
+ */
+if (!process.env.SERVER_URL && process.env.RENDER_EXTERNAL_URL) {
+  process.env.SERVER_URL = process.env.RENDER_EXTERNAL_URL;
+}
+
+/**
  * Environment is validated once, at boot. A misconfigured deployment should
  * fail loudly on startup rather than at the first request that needs a secret.
  */
@@ -39,6 +49,27 @@ const schema = z.object({
   RAZORPAY_KEY_ID: z.string().optional().default(''),
   RAZORPAY_KEY_SECRET: z.string().optional().default(''),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().default(''),
+
+  /**
+   * Explicit opt-in to run the simulated gateway on a production build.
+   *
+   * This exists for one purpose: a public *demonstration* deployment, where we
+   * still want production security (HTTPS-only cookies, no debug output) but
+   * have no real gateway credentials. It must be set deliberately, and the
+   * server shouts about it on every boot — it is never the default.
+   */
+  ALLOW_MOCK_PAYMENTS: z
+    .enum(['true', 'false'])
+    .optional()
+    .default('false')
+    .transform((value) => value === 'true'),
+
+  /** Load the demo catalogue on boot if the database has no products yet. */
+  SEED_ON_EMPTY: z
+    .enum(['true', 'false'])
+    .optional()
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -52,14 +83,31 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 
-/** Mock payments are a development affordance and must never ship to prod. */
+/**
+ * Mock payments are a development affordance. Shipping them to a real business
+ * would mean orders marked paid without money moving, so production refuses to
+ * start unless a human has explicitly acknowledged that this is a demo.
+ */
 if (env.NODE_ENV === 'production' && env.PAYMENT_MODE === 'mock') {
+  if (!env.ALLOW_MOCK_PAYMENTS) {
+    // eslint-disable-next-line no-console
+    console.error(
+      '\nRefusing to start: PAYMENT_MODE=mock is not permitted when NODE_ENV=production.\n' +
+        'Either configure RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET and set PAYMENT_MODE=razorpay,\n' +
+        'or — for a demonstration deployment only — set ALLOW_MOCK_PAYMENTS=true.\n',
+    );
+    process.exit(1);
+  }
+
   // eslint-disable-next-line no-console
-  console.error(
-    '\nRefusing to start: PAYMENT_MODE=mock is not permitted when NODE_ENV=production.\n' +
-      'Configure RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET and set PAYMENT_MODE=razorpay.\n',
+  console.warn(
+    '\n' +
+      '  ┌─────────────────────────────────────────────────────────────┐\n' +
+      '  │  DEMONSTRATION MODE — PAYMENTS ARE SIMULATED                │\n' +
+      '  │  No money moves. Orders are marked paid by a fake gateway.  │\n' +
+      '  │  Never run this configuration for a real business.          │\n' +
+      '  └─────────────────────────────────────────────────────────────┘\n',
   );
-  process.exit(1);
 }
 
 if (env.PAYMENT_MODE === 'razorpay' && (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET)) {

@@ -1,5 +1,5 @@
-import type { CookieOptions, Request, Response } from 'express';
-import { isProd } from '../config/env';
+import type { Request, Response } from 'express';
+import { refreshCookieOptions } from '../config/cookies';
 import { asyncHandler } from '../utils/asyncHandler';
 import { AppError } from '../utils/AppError';
 import * as authService from '../services/auth.service';
@@ -12,24 +12,20 @@ const REFRESH_COOKIE = 'alaap_rt';
  * The refresh token lives in an httpOnly cookie so page reloads can restore a
  * session without exposing a long-lived credential to JavaScript. The short-
  * lived access token is returned in the body and held in memory by the client.
+ *
+ * SameSite is decided by the deployment shape — see config/cookies.
  */
-const refreshCookieOptions: CookieOptions = {
-  httpOnly: true,
-  sameSite: 'lax',
-  secure: isProd,
-  path: '/api/auth',
-  maxAge: 30 * 24 * 60 * 60 * 1000,
-};
+const refreshCookie = refreshCookieOptions();
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.register({ ...req.body, guestSessionId: req.cartSessionId });
-  res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions);
+  res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookie);
   res.status(201).json({ user: result.user, accessToken: result.accessToken });
 });
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.login({ ...req.body, guestSessionId: req.cartSessionId });
-  res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions);
+  res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookie);
   res.json({ user: result.user, accessToken: result.accessToken });
 });
 
@@ -38,13 +34,13 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
   if (!token) throw AppError.unauthorized();
 
   const result = await authService.refresh(token);
-  res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions);
+  res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookie);
   res.json({ user: result.user, accessToken: result.accessToken });
 });
 
 export const logout = asyncHandler(async (req: Request, res: Response) => {
   await authService.logout(req.cookies?.[REFRESH_COOKIE]);
-  res.clearCookie(REFRESH_COOKIE, { ...refreshCookieOptions, maxAge: undefined });
+  res.clearCookie(REFRESH_COOKIE, { ...refreshCookie, maxAge: undefined });
   res.json({ ok: true });
 });
 
@@ -78,6 +74,6 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
 
 export const changePassword = asyncHandler(async (req: Request, res: Response) => {
   await authService.changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword);
-  res.clearCookie(REFRESH_COOKIE, { ...refreshCookieOptions, maxAge: undefined });
+  res.clearCookie(REFRESH_COOKIE, { ...refreshCookie, maxAge: undefined });
   res.json({ ok: true, message: 'Password updated. Please sign in again.' });
 });
