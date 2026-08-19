@@ -75,6 +75,14 @@ Browse the café  →  Explore the menu  →  Customise a dish  →  Add to cart
 - Card and UPI details are collected by **Razorpay Checkout on Razorpay's own PCI-compliant surface**.
   This application never sees, transmits or stores a card number, CVV or UPI PIN — it only sends
   identity (name, email, phone) to prefill the gateway's form.
+- The gateway's cut is **grossed up, not added**. Charging ₹1,000 + 2% leaves the café short,
+  because the gateway takes its 2% of the *larger* sum too. The server solves for the charge that
+  nets the order value — `charged = net ÷ (1 − rate)` — so the café actually receives what the bill
+  says. Cash orders are never charged a fee, and the rate is a settings field (default 2%) the café
+  can set to zero to absorb the cost instead.
+- **Only the methods the gateway will actually accept are offered.** Availability is a dashboard
+  setting on the gateway's side, so the checkout asks rather than assumes, and shows the reason
+  beside anything switched off instead of hiding it
 - Razorpay integration with **server-side HMAC signature verification**
 - A `PAYMENT_MODE=mock` development gateway that exercises the *same* verification path with a real
   signature — it is not a bypass, and the server refuses to boot with it in production
@@ -138,7 +146,7 @@ Recharts, Socket.IO client, Lucide, Sonner.
 **Backend** — Node.js, Express 4, TypeScript, PostgreSQL 15, Prisma 6, JWT with rotating refresh
 tokens, bcrypt, Socket.IO, Razorpay, Zod, Helmet, express-rate-limit, qrcode.
 
-**Testing** — Vitest + Supertest (120 tests).
+**Testing** — Vitest + Supertest (159 tests).
 
 ---
 
@@ -185,7 +193,7 @@ returns totals, which is why the money rules are the most heavily tested part of
 
 ## Database schema
 
-24 models. Highlights:
+28 models. Highlights:
 
 **Identity** — `User`, `RefreshToken` (hashed, rotating), `Address`
 **Locations** — `Cafe`, `OperatingHour`, `CafeTable` (each with an opaque `qrToken`)
@@ -193,7 +201,7 @@ returns totals, which is why the money rules are the most heavily tested part of
 **Shopping** — `Cart`, `CartItem`, `CartItemModifier`, `Wishlist`, `WishlistItem`
 **Orders** — `Order`, `OrderItem`, `OrderItemModifier`, `DeliveryAddress`, `Payment`, `Refund`, `OrderStatusHistory`
 **Engagement** — `Review`, `Coupon`, `CouponUsage`
-**Config** — `Setting` (tax rate, delivery pricing, thresholds)
+**Config** — `Setting` (tax rate, delivery pricing, thresholds, gateway fee rate)
 
 Three decisions worth calling out:
 
@@ -294,9 +302,12 @@ on the kitchen board.
 | `NODE_ENV` | | `development` \| `test` \| `production` |
 | `PORT` | | API port (default `4000`) |
 | `CLIENT_URL` | | Allowed CORS origin |
+| `SERVER_URL` | | Public API origin. Compared against `CLIENT_URL` to decide the cookie policy; falls back to `RENDER_EXTERNAL_URL` |
 | `PAYMENT_MODE` | | `razorpay` \| `mock` |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | when `razorpay` | Gateway credentials |
 | `RAZORPAY_WEBHOOK_SECRET` | | Webhook signature secret |
+| `ALLOW_MOCK_PAYMENTS` | | Escape hatch to permit `PAYMENT_MODE=mock` in production. Absent by default, and deliberately so |
+| `SEED_ON_EMPTY` | | Load the demo menu on boot, but only if the database has no products at all |
 | `VITE_API_URL` | ✅ (client) | API base URL |
 
 Environment is validated with Zod at boot — a misconfigured deployment fails loudly on startup
@@ -415,6 +426,7 @@ customer-safe messages — stack traces and database errors never reach the clie
 | `PATCH` | `/api/orders/:id/cancel` |
 | `POST` | `/api/orders/:id/reorder` |
 | `POST` | `/api/payments/create-order`, `/verify`, `/failed`, `/retry`, `/webhook` |
+| `GET` | `/api/payments/methods` — online methods the gateway currently accepts |
 | `GET` | `/api/admin/orders/:id/refundable` — what can still be returned |
 | `POST` | `/api/admin/orders/:id/refund` — full or partial refund (admin only) |
 
@@ -423,12 +435,14 @@ customer-safe messages — stack traces and database errors never reach the clie
 | Method | Endpoint |
 |---|---|
 | `GET` `POST` `PATCH` `DELETE` | `/api/account/addresses`, `/api/account/wishlist` |
-| `POST` | `/api/account/reviews` |
+| `GET` | `/api/account/wishlist/ids` — ids only, so menu cards render cheaply |
+| `POST` `GET` | `/api/account/reviews`, `/api/account/reviews/pending` |
 | `GET` | `/api/cafes`, `/api/tables/:token`, `/api/service-status`, `/api/settings`, `/api/coupons` |
 | `POST` | `/api/contact`, `/api/coupons/preview` |
 | `GET` | `/api/admin/dashboard`, `/api/admin/kitchen/board`, `/api/admin/orders` |
 | `PATCH` | `/api/admin/orders/:id/status` |
 | `GET` `POST` `PATCH` `DELETE` | `/api/admin/products`, `/api/admin/tables`, `/api/admin/coupons` |
+| `POST` | `/api/admin/tables/generate` — bulk-create tables with QR tokens |
 | `GET` | `/api/admin/tables/:id/qr`, `/api/admin/customers` |
 
 ---
@@ -454,7 +468,7 @@ gracefully where WebSockets are blocked. The UI states which mode it is in rathe
 npm test
 ```
 
-**120 tests, all passing** — against a dedicated `alaap_test` database so development data is never
+**159 tests, all passing** — against a dedicated `alaap_test` database so development data is never
 touched.
 
 ```bash
@@ -469,10 +483,11 @@ cd server && DATABASE_URL="postgresql://USER@localhost:5432/alaap_test" npx pris
 | `auth.test.ts` | Registration, hashing, login, refresh rotation, logout, route protection |
 | `cart.test.ts` | Server-side pricing, required modifiers, availability, merging, ownership, guest merge |
 | `orders.test.ts` | All three order types, price snapshots, stock revalidation, coupons, lifecycle, reorder, authorisation |
-| `payments.test.ts` | Signature verification, forged/replayed signatures, idempotency, failure, retry |
+| `payments.test.ts` | Signature verification, forged/replayed signatures, idempotency, failure, retry, gateway method discovery |
+| `paymentGating.test.ts` | That an unpaid online order reaches no kitchen, no revenue figure and no staff action until the gateway confirms |
 | `refunds.test.ts` | Full/partial refunds, over-refund and double-refund guards, automatic refund on cancellation, unpaid orders, authorisation |
 
-These are not decorative. Writing them surfaced five real bugs that were fixed rather than
+These are not decorative. Writing them surfaced six real bugs that were fixed rather than
 accommodated:
 
 1. An empty delivery cart still charged the ₹49 delivery fee, so the cart displayed a ₹49 total for nothing.
@@ -484,8 +499,13 @@ accommodated:
 5. The cart was cached before the session restored, so a signed-in customer saw an empty cart after a
    refresh. Fixed by scoping the query key to the user.
 
-A sixth was found by inspecting the running page: eleven Tailwind opacity classes used off-scale
-values (`bg-cream/88`), which silently generate **no CSS** — the sticky header had no background.
+6. Issuing a refund overwrote the payment's `SUCCESS` status, which broke every *subsequent* partial
+   refund — the "find the captured payment" lookup could no longer find it. Five refund tests failed
+   at once and named the cause.
+
+A seventh was found by inspecting the running page rather than by a test: eleven Tailwind opacity
+classes used off-scale values (`bg-cream/88`), which silently generate **no CSS** — the sticky header
+had no background.
 
 ---
 
