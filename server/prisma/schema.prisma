@@ -1,0 +1,699 @@
+// ALAAP — Coffee Roasters & Kitchen
+// Relational schema for the cafe ordering platform.
+//
+// Design notes
+// ------------
+// * Customisation is modelled with ONE mechanism: `Modifier` (a group such as
+//   "Size" or "Milk") + `ModifierOption` (the choices), attached to products
+//   through the `ProductModifier` join table so a group can be reused across
+//   many products. Sizes are simply a required single-select modifier, which
+//   avoids maintaining a second parallel pricing path.
+// * Orders never reference live product data for display or money. Every
+//   OrderItem carries name / image / price snapshots so historical orders stay
+//   accurate after the menu changes.
+// * `Address` is the customer's reusable address book. `DeliveryAddress` is the
+//   immutable per-order copy of wherever that order was actually sent.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- enums
+
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum AddressType {
+  HOME
+  WORK
+  OTHER
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+}
+
+enum SelectionType {
+  SINGLE
+  MULTI
+}
+
+enum OrderType {
+  DELIVERY
+  PICKUP
+  DINE_IN
+}
+
+enum DeliverySpeed {
+  STANDARD
+  EXPRESS
+}
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  COLLECTED
+  SERVED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  UPI
+  CARD
+  NETBANKING
+  COD
+  PAY_AT_COUNTER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  /// Some of the bill has been returned; the rest is still legitimately ours.
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+/// Refunds are asynchronous at every real gateway — the money leaves our
+/// balance immediately but can take days to reach the customer's account, and
+/// it can still fail after being accepted.
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+enum PaymentProvider {
+  RAZORPAY
+  MOCK
+  CASH
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+// ---------------------------------------------------------------- identity
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String
+  passwordHash String
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  addresses     Address[]
+  orders        Order[]
+  cart          Cart?
+  wishlist      Wishlist?
+  reviews       Review[]
+  refreshTokens RefreshToken[]
+  couponUsages  CouponUsage[]
+  issuedRefunds Refund[]
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Hashed, rotating refresh tokens. Revoking a session = deleting a row.
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Address {
+  id           String      @id @default(cuid())
+  userId       String
+  label        String?
+  fullName     String
+  phone        String
+  line1        String
+  line2        String?
+  city         String
+  state        String
+  postalCode   String
+  country      String      @default("India")
+  addressType  AddressType @default(HOME)
+  isDefault    Boolean     @default(false)
+  instructions String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ---------------------------------------------------------------- locations
+
+model Cafe {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  tagline     String?
+  line1       String
+  city        String
+  state       String
+  postalCode  String
+  phone       String
+  email       String?
+  imageUrl    String?
+  latitude    Float?
+  longitude   Float?
+  isActive    Boolean  @default(true)
+  supportsDelivery Boolean @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tables         CafeTable[]
+  hours          OperatingHour[]
+  orders         Order[]
+
+  @@map("cafes")
+}
+
+/// One row per weekday per cafe. Minutes-from-midnight keeps comparisons trivial
+/// and lets a closing time roll past midnight (e.g. 1440 + 30).
+model OperatingHour {
+  id        String  @id @default(cuid())
+  cafeId    String
+  dayOfWeek Int // 0 = Sunday .. 6 = Saturday
+  opensAt   Int
+  closesAt  Int
+  isClosed  Boolean @default(false)
+
+  cafe Cafe @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  @@unique([cafeId, dayOfWeek])
+  @@map("operating_hours")
+}
+
+model CafeTable {
+  id        String      @id @default(cuid())
+  cafeId    String
+  label     String
+  floor     String      @default("Ground")
+  capacity  Int         @default(2)
+  status    TableStatus @default(AVAILABLE)
+  /// Opaque token embedded in the printed QR code, so table identity is not
+  /// guessable by incrementing a number.
+  qrToken   String      @unique @default(cuid())
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  cafe   Cafe    @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@unique([cafeId, label])
+  @@index([cafeId])
+  @@map("cafe_tables")
+}
+
+// ---------------------------------------------------------------- catalogue
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  categoryId      String
+  name            String
+  slug            String   @unique
+  description     String
+  story           String?
+  basePrice       Int // stored in paise-free rupees (INR, whole units)
+  imageUrl        String
+  calories        Int?
+  prepTimeMinutes Int      @default(10)
+  ingredients     String[] @default([])
+  allergens       String[] @default([])
+  tags            String[] @default([])
+
+  isVegetarian   Boolean @default(true)
+  isVegan        Boolean @default(false)
+  containsEgg    Boolean @default(false)
+  containsNuts   Boolean @default(false)
+  containsGluten Boolean @default(false)
+  isSpicy        Boolean @default(false)
+
+  isBestseller   Boolean @default(false)
+  isNew          Boolean @default(false)
+  isChefSpecial  Boolean @default(false)
+  isSeasonal     Boolean @default(false)
+  isAvailable    Boolean @default(true)
+
+  ratingAvg   Float @default(0)
+  ratingCount Int   @default(0)
+  orderCount  Int   @default(0)
+  sortOrder   Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category      Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images        ProductImage[]
+  modifiers     ProductModifier[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  wishlistItems WishlistItem[]
+  reviews       Review[]
+
+  @@index([categoryId])
+  @@index([isAvailable])
+  @@index([isBestseller])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String @id @default(cuid())
+  productId String
+  url       String
+  alt       String?
+  sortOrder Int    @default(0)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+/// A customisation group, e.g. "Size" (single-select, required) or
+/// "Add-ons" (multi-select, optional). Reusable across products.
+model Modifier {
+  id            String        @id @default(cuid())
+  name          String
+  description   String?
+  selectionType SelectionType @default(SINGLE)
+  isRequired    Boolean       @default(false)
+  minSelect     Int           @default(0)
+  maxSelect     Int           @default(1)
+  sortOrder     Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  options  ModifierOption[]
+  products ProductModifier[]
+
+  @@map("modifiers")
+}
+
+model ModifierOption {
+  id         String  @id @default(cuid())
+  modifierId String
+  name       String
+  priceDelta Int     @default(0)
+  isDefault  Boolean @default(false)
+  isAvailable Boolean @default(true)
+  sortOrder  Int     @default(0)
+
+  modifier        Modifier          @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+  cartItemOptions CartItemModifier[]
+
+  @@index([modifierId])
+  @@map("modifier_options")
+}
+
+model ProductModifier {
+  id         String @id @default(cuid())
+  productId  String
+  modifierId String
+  sortOrder  Int    @default(0)
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  modifier Modifier @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, modifierId])
+  @@index([productId])
+  @@map("product_modifiers")
+}
+
+// ---------------------------------------------------------------- cart
+
+model Cart {
+  id        String   @id @default(cuid())
+  userId    String?  @unique
+  /// Guest carts are keyed by an anonymous cookie so a customer can browse and
+  /// build an order before signing in; merged into their user cart at login.
+  sessionId String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  productId String
+  quantity  Int      @default(1)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cart      Cart               @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  modifiers CartItemModifier[]
+
+  @@index([cartId])
+  @@map("cart_items")
+}
+
+model CartItemModifier {
+  id               String @id @default(cuid())
+  cartItemId       String
+  modifierOptionId String
+
+  cartItem       CartItem       @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
+  modifierOption ModifierOption @relation(fields: [modifierOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([cartItemId, modifierOptionId])
+  @@index([cartItemId])
+  @@map("cart_item_modifiers")
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WishlistItem[]
+
+  @@map("wishlists")
+}
+
+model WishlistItem {
+  id         String   @id @default(cuid())
+  wishlistId String
+  productId  String
+  createdAt  DateTime @default(now())
+
+  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([wishlistId, productId])
+  @@map("wishlist_items")
+}
+
+// ---------------------------------------------------------------- orders
+
+model Order {
+  id          String @id @default(cuid())
+  orderNumber String @unique
+  userId      String
+
+  orderType OrderType
+  cafeId    String?
+  tableId   String?
+
+  scheduledFor  DateTime?
+  deliverySpeed DeliverySpeed?
+
+  /// Contact snapshot — an order should still be fulfillable after the
+  /// customer edits their profile.
+  contactName  String
+  contactPhone String
+  notes        String?
+
+  subtotal    Int
+  discount    Int @default(0)
+  tax         Int @default(0)
+  deliveryFee Int @default(0)
+  total       Int
+
+  couponId   String?
+  couponCode String?
+
+  paymentMethod PaymentMethod
+  paymentStatus PaymentStatus @default(PENDING)
+  orderStatus   OrderStatus   @default(PLACED)
+
+  estimatedReadyAt DateTime?
+  cancelledReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user            User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  cafe            Cafe?              @relation(fields: [cafeId], references: [id], onDelete: SetNull)
+  table           CafeTable?         @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  coupon          Coupon?            @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  deliveryAddress DeliveryAddress?
+  items           OrderItem[]
+  payments        Payment[]
+  refunds         Refund[]
+  statusHistory   OrderStatusHistory[]
+  reviews         Review[]
+  couponUsages    CouponUsage[]
+
+  @@index([userId])
+  @@index([orderStatus])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+/// Immutable per-order copy of the destination address.
+model DeliveryAddress {
+  id           String  @id @default(cuid())
+  orderId      String  @unique
+  fullName     String
+  phone        String
+  line1        String
+  line2        String?
+  city         String
+  state        String
+  postalCode   String
+  country      String  @default("India")
+  instructions String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_addresses")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String?
+
+  productNameSnapshot  String
+  productImageSnapshot String
+  unitPriceSnapshot    Int
+  /// Human-readable modifier summary kept alongside the relational rows, so a
+  /// receipt can be rendered from a single row.
+  customizationSnapshot Json?
+
+  quantity Int
+  subtotal Int
+  notes    String?
+
+  order     Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  modifiers OrderItemModifier[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id          String @id @default(cuid())
+  orderItemId String
+
+  modifierNameSnapshot String
+  optionNameSnapshot   String
+  priceDeltaSnapshot   Int
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([orderItemId])
+  @@map("order_item_modifiers")
+}
+
+model Payment {
+  id                String          @id @default(cuid())
+  orderId           String
+  provider          PaymentProvider
+  providerOrderId   String?
+  providerPaymentId String?         @unique
+  providerSignature String?
+  amount            Int
+  currency          String          @default("INR")
+  method            PaymentMethod
+  status            PaymentStatus   @default(PENDING)
+  failureReason     String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds Refund[]
+
+  @@index([orderId])
+  @@index([providerOrderId])
+  @@map("payments")
+}
+
+/// A returned amount against a captured payment. Modelled as its own row rather
+/// than a flag on Payment so partial refunds, repeated refunds and a full audit
+/// trail (who issued it, why, and what the gateway said) are all representable.
+model Refund {
+  id               String          @id @default(cuid())
+  orderId          String
+  paymentId        String
+  amount           Int
+  reason           String?
+  status           RefundStatus    @default(PENDING)
+  provider         PaymentProvider
+  providerRefundId String?         @unique
+  failureReason    String?
+  /// Null when the system issued it automatically on cancellation.
+  issuedByUserId   String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  order    Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment  Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  issuedBy User?   @relation(fields: [issuedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  note      String?
+  createdAt DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_status_history")
+}
+
+// ---------------------------------------------------------------- engagement
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  orderId   String?
+  rating    Int
+  title     String?
+  comment   String
+  /// True when we can tie the review to a delivered order for that product.
+  isVerified Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order   Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, productId])
+  @@index([productId])
+  @@map("reviews")
+}
+
+model Coupon {
+  id             String       @id @default(cuid())
+  code           String       @unique
+  description    String
+  discountType   DiscountType
+  discountValue  Int
+  minOrderAmount Int          @default(0)
+  maxDiscount    Int?
+  maxUses        Int?
+  maxUsesPerUser Int          @default(1)
+  usedCount      Int          @default(0)
+  startsAt       DateTime     @default(now())
+  expiresAt      DateTime?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  orders Order[]
+  usages CouponUsage[]
+
+  @@map("coupons")
+}
+
+model CouponUsage {
+  id             String   @id @default(cuid())
+  couponId       String
+  userId         String
+  orderId        String
+  discountAmount Int
+  createdAt      DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, orderId])
+  @@index([userId])
+  @@map("coupon_usages")
+}
+
+/// Single-row table of tunable business settings, so GST rate / delivery
+/// pricing / free-delivery threshold are configuration rather than code.
+model Setting {
+  id                    String   @id @default("singleton")
+  taxRatePercent        Float    @default(5)
+  deliveryFee           Int      @default(49)
+  expressDeliveryFee    Int      @default(89)
+  freeDeliveryThreshold Int      @default(499)
+  packagingFee          Int      @default(0)
+  updatedAt             DateTime @updatedAt
+
+  @@map("settings")
+}

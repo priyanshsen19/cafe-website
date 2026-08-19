@@ -1,0 +1,36 @@
+# ── dependencies ──
+node_modules/
+
+# ── build output ──
+dist/
+build/
+client/dist/
+server/dist/
+
+# ── environment ────────────────────────────────────────────────────────────
+# Every .env* file is ignored, then the committed templates are added back.
+# This is deliberately broad: a new .env.staging should be secret by default
+# rather than secret only if someone remembers to add a rule.
+.env
+.env.*
+!.env.example
+!.env.test.example
+
+# ── logs & caches ──
+*.log
+npm-debug.log*
+yarn-error.log*
+.npm/
+.eslintcache
+coverage/
+.vite/
+
+# ── editors & OS ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ── local tooling ──
+.claude/

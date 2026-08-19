@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── ALAAP palette ─────────────────────────────────────────────────────
+       Warm cream ground, espresso ink, one terracotta accent and a muted
+       olive. Deliberately narrow — the photography supplies the colour. */
+    --cream: 39 41% 96%;
+    --paper: 38 38% 93%;
+    --sand: 36 30% 86%;
+    --espresso: 18 23% 13%;
+    --charcoal: 24 18% 9%;
+    --olive: 79 14% 39%;
+    --terracotta: 18 59% 45%;
+
+    --background: var(--cream);
+    --foreground: var(--espresso);
+
+    --card: 40 50% 98%;
+    --card-foreground: var(--espresso);
+
+    --popover: 40 50% 98%;
+    --popover-foreground: var(--espresso);
+
+    /* Primary actions are espresso, not the accent — the accent stays rare. */
+    --primary: var(--espresso);
+    --primary-foreground: 39 41% 96%;
+
+    --secondary: var(--paper);
+    --secondary-foreground: var(--espresso);
+
+    --muted: 36 24% 90%;
+    --muted-foreground: 24 10% 42%;
+
+    --accent: var(--terracotta);
+    --accent-foreground: 39 41% 96%;
+
+    --destructive: 4 62% 44%;
+    --destructive-foreground: 39 41% 96%;
+
+    --border: var(--sand);
+    --input: 36 26% 82%;
+    --ring: var(--espresso);
+
+    --radius: 0.625rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: theme('fontFamily.sans');
+    font-feature-settings: 'cv11', 'ss01';
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Fraunces is a variable font; keep it low-wonk and slightly soft so it reads
+     editorial rather than novelty. */
+  h1, h2, h3, h4, .font-display {
+    font-family: theme('fontFamily.display');
+    font-variation-settings: 'SOFT' 20, 'WONK' 0, 'opsz' 40;
+    font-weight: 400;
+  }
+
+  /* A single, consistent focus treatment across every interactive element. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  ::selection {
+    background: hsl(var(--terracotta) / 0.18);
+  }
+
+  /* Respect the reader's motion preference everywhere, including Framer Motion
+     transitions driven by CSS. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* Firefox / WebKit scrollbar, tinted to the brand rather than default grey. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--sand)) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--sand));
+    border-radius: 999px;
+    border: 3px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--espresso) / 0.25);
+  }
+}
+
+@layer components {
+  /* Small caps label used above section headings. */
+  .eyebrow {
+    @apply text-eyebrow font-sans font-medium uppercase text-muted-foreground;
+  }
+
+  /* Thin rule that reads as a hairline on cream. */
+  .hairline {
+    @apply border-t border-border;
+  }
+
+  /* Image frame: fixed ratio, quiet zoom on hover, no layout shift. */
+  .media {
+    @apply relative overflow-hidden bg-muted;
+  }
+  .media img {
+    @apply h-full w-full object-cover transition-transform duration-700 ease-editorial;
+  }
+  .group:hover .media img {
+    transform: scale(1.045);
+  }
+
+  /* Skeleton shimmer that matches the paper ground. */
+  .shimmer {
+    @apply relative overflow-hidden bg-muted;
+  }
+  .shimmer::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background: linear-gradient(90deg, transparent, hsl(var(--cream) / 0.65), transparent);
+  }
+
+  /* Underline that grows from the left — used on editorial text links. */
+  .link-underline {
+    @apply relative inline-block;
+  }
+  .link-underline::after {
+    content: '';
+    @apply absolute -bottom-0.5 left-0 h-px w-0 bg-current transition-all duration-300 ease-editorial;
+  }
+  .link-underline:hover::after {
+    @apply w-full;
+  }
+}
+
+@layer utilities {
+  /* Keeps long content (tables, code) scrollable without the page moving. */
+  .scroll-x {
+    @apply overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Respects the iOS home indicator on the mobile checkout bar. */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
