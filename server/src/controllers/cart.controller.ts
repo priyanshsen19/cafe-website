@@ -11,13 +11,16 @@ function ownerFor(req: Request): cartService.CartOwner {
 }
 
 export const get = asyncHandler(async (req: Request, res: Response) => {
-  const { orderType, couponCode, deliverySpeed } = req.query as unknown as {
+  const { orderType, couponCode, deliverySpeed, paymentMethod } = req.query as unknown as {
     orderType: 'DELIVERY' | 'PICKUP' | 'DINE_IN';
     couponCode?: string;
     deliverySpeed: 'STANDARD' | 'EXPRESS';
+    paymentMethod?: 'UPI' | 'CARD' | 'NETBANKING' | 'COD' | 'PAY_AT_COUNTER';
   };
 
-  res.json({ cart: await cartService.getCartView(ownerFor(req), { orderType, couponCode, deliverySpeed }) });
+  res.json({
+    cart: await cartService.getCartView(ownerFor(req), { orderType, couponCode, deliverySpeed, paymentMethod }),
+  });
 });
 
 export const addItem = asyncHandler(async (req: Request, res: Response) => {

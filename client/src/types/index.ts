@@ -173,6 +173,8 @@ export interface Totals {
   discount: number;
   tax: number;
   deliveryFee: number;
+  /** Gateway processing charge, on online payments only. */
+  paymentFee: number;
   total: number;
   taxRatePercent: number;
   freeDeliveryThreshold: number;
@@ -229,6 +231,7 @@ export interface Order {
   discount: number;
   tax: number;
   deliveryFee: number;
+  paymentFee: number;
   total: number;
   couponCode: string | null;
   notes: string | null;
@@ -347,6 +350,7 @@ export interface Pagination {
 
 export interface Settings {
   taxRatePercent: number;
+  onlinePaymentFeePercent: number;
   deliveryFee: number;
   expressDeliveryFee: number;
   freeDeliveryThreshold: number;

@@ -1,4 +1,4 @@
-import type { Cart, DeliverySpeed, OrderType, Prisma } from '@prisma/client';
+import type { Cart, DeliverySpeed, OrderType, PaymentMethod, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { productDetailInclude, toModifierGroups } from '../repositories/product.repository';
@@ -112,7 +112,13 @@ function priceCart(cart: CartWithItems): { lines: CartLine[]; unavailable: CartL
 
 export async function getCartView(
   owner: CartOwner,
-  options: { orderType?: OrderType; couponCode?: string | null; deliverySpeed?: DeliverySpeed } = {},
+  options: {
+    orderType?: OrderType;
+    couponCode?: string | null;
+    deliverySpeed?: DeliverySpeed;
+    /** Once chosen, decides whether a gateway fee is added. */
+    paymentMethod?: PaymentMethod;
+  } = {},
 ): Promise<CartView> {
   const cart = await loadCart(owner);
   const settings = await getSettings();
@@ -126,7 +132,7 @@ export async function getCartView(
       unavailableLines: [],
       itemCount: 0,
       coupon: null,
-      totals: computeTotals({ lines: [], orderType, settings }),
+      totals: computeTotals({ lines: [], orderType, settings, paymentMethod: options.paymentMethod }),
     };
   }
 
@@ -147,6 +153,7 @@ export async function getCartView(
     settings,
     coupon: couponRecord,
     deliverySpeed: options.deliverySpeed,
+    paymentMethod: options.paymentMethod,
   });
 
   if (couponRecord) {

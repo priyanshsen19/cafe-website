@@ -154,4 +154,5 @@ export const settingsSchema = z.object({
   expressDeliveryFee: z.coerce.number().int().min(0).max(2000).optional(),
   freeDeliveryThreshold: z.coerce.number().int().min(0).max(100000).optional(),
   packagingFee: z.coerce.number().int().min(0).max(500).optional(),
+  onlinePaymentFeePercent: z.coerce.number().min(0).max(10).optional(),
 });

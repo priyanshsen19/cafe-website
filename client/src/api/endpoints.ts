@@ -103,7 +103,14 @@ export const menuApi = {
 // ── cart ────────────────────────────────────────────────────────────────────
 
 export const cartApi = {
-  get: (params: { orderType?: OrderType; couponCode?: string; deliverySpeed?: DeliverySpeed } = {}) =>
+  get: (
+    params: {
+      orderType?: OrderType;
+      couponCode?: string;
+      deliverySpeed?: DeliverySpeed;
+      paymentMethod?: PaymentMethod;
+    } = {},
+  ) =>
     api.get<{ cart: CartView }>(`/cart${qs(params)}`),
 
   addItem: (body: { productId: string; quantity: number; modifierOptionIds: string[]; notes?: string }) =>

@@ -100,6 +100,7 @@ export const publicSettings = asyncHandler(async (_req: Request, res: Response) 
       expressDeliveryFee: settings.expressDeliveryFee,
       freeDeliveryThreshold: settings.freeDeliveryThreshold,
       packagingFee: settings.packagingFee,
+      onlinePaymentFeePercent: settings.onlinePaymentFeePercent,
     },
   });
 });

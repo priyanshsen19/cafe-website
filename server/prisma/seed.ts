@@ -197,6 +197,7 @@ async function main() {
       expressDeliveryFee: 89,
       freeDeliveryThreshold: 499,
       packagingFee: 0,
+      onlinePaymentFeePercent: 2,
     },
   });
   const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 'singleton' } });

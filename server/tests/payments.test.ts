@@ -51,8 +51,13 @@ describe('payment session', () => {
     const session = response.body.session;
     expect(session.mode).toBe('mock');
     expect(session.providerOrderId).toBeTruthy();
-    // 2 × (210 + 30 + 60) = 600, +5% tax = 630.
-    expect(session.amount).toBe(630);
+
+    // 2 × (210 + 30 + 60) = 600, +5% tax = 630, then grossed up by the 2%
+    // gateway fee so the café still nets 630: 630 ÷ 0.98 = 642.86 → 643.
+    expect(session.amount).toBe(643);
+
+    // The charged amount, minus what the gateway keeps, is the order value.
+    expect(session.amount - session.amount * 0.02).toBeCloseTo(630, 0);
   });
 
   it('refuses to start an online payment for a cash order', async () => {

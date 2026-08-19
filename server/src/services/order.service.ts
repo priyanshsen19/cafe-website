@@ -145,7 +145,10 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
 
   // Re-read the cart from the database and re-price it. Nothing about money
   // comes from the request.
-  const cart = await cartService.getCartView({ userId }, { orderType: input.orderType });
+  const cart = await cartService.getCartView(
+    { userId },
+    { orderType: input.orderType, paymentMethod: input.paymentMethod },
+  );
 
   // Unavailable items are reported before emptiness: a cart holding only
   // sold-out dishes has zero orderable lines, and "your cart is empty" would be
@@ -184,6 +187,7 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
     settings,
     coupon,
     deliverySpeed: input.deliverySpeed,
+    paymentMethod: input.paymentMethod,
   });
 
   // Promised ready time: a base turnaround plus a little per additional item.
@@ -211,6 +215,7 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
         discount: totals.discount,
         tax: totals.tax,
         deliveryFee: totals.deliveryFee,
+        paymentFee: totals.paymentFee,
         total: totals.total,
         couponId: coupon?.id,
         couponCode: coupon?.code,
@@ -376,6 +381,7 @@ export function toOrderSummary(order: OrderDetail) {
     discount: order.discount,
     tax: order.tax,
     deliveryFee: order.deliveryFee,
+    paymentFee: order.paymentFee,
     total: order.total,
     couponCode: order.couponCode,
     notes: order.notes,

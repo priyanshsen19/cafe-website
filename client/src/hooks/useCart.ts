@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { cartApi } from '@/api/endpoints';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUiStore } from '@/store/ui';
-import type { DeliverySpeed, OrderType } from '@/types';
+import type { DeliverySpeed, OrderType, PaymentMethod } from '@/types';
 
 export const cartKeys = {
   all: ['cart'] as const,
@@ -12,11 +12,18 @@ export const cartKeys = {
     orderType: OrderType,
     couponCode?: string,
     deliverySpeed?: DeliverySpeed,
-  ) => ['cart', scope, orderType, couponCode ?? null, deliverySpeed ?? 'STANDARD'] as const,
+    paymentMethod?: PaymentMethod,
+  ) =>
+    ['cart', scope, orderType, couponCode ?? null, deliverySpeed ?? 'STANDARD', paymentMethod ?? null] as const,
 };
 
 export function useCart(
-  options: { orderType?: OrderType; couponCode?: string; deliverySpeed?: DeliverySpeed } = {},
+  options: {
+    orderType?: OrderType;
+    couponCode?: string;
+    deliverySpeed?: DeliverySpeed;
+    paymentMethod?: PaymentMethod;
+  } = {},
 ) {
   const orderType = options.orderType ?? 'DELIVERY';
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -27,10 +34,15 @@ export function useCart(
   const scope = user?.id ?? 'guest';
 
   return useQuery({
-    queryKey: cartKeys.view(scope, orderType, options.couponCode, options.deliverySpeed),
+    queryKey: cartKeys.view(scope, orderType, options.couponCode, options.deliverySpeed, options.paymentMethod),
     queryFn: () =>
       cartApi
-        .get({ orderType, couponCode: options.couponCode, deliverySpeed: options.deliverySpeed })
+        .get({
+          orderType,
+          couponCode: options.couponCode,
+          deliverySpeed: options.deliverySpeed,
+          paymentMethod: options.paymentMethod,
+        })
         .then((response) => response.cart),
     // Don't fetch a guest cart while the session is still being restored —
     // that request would race the token and come back empty.

@@ -471,6 +471,9 @@ model Order {
   discount    Int @default(0)
   tax         Int @default(0)
   deliveryFee Int @default(0)
+  /// Gateway processing charge passed on for online payments. Snapshotted so a
+  /// historical receipt still adds up after the rate is changed.
+  paymentFee  Int @default(0)
   total       Int
 
   couponId   String?
@@ -697,6 +700,10 @@ model Setting {
   expressDeliveryFee    Int      @default(89)
   freeDeliveryThreshold Int      @default(499)
   packagingFee          Int      @default(0)
+  /// What the gateway keeps on an online payment, as a percentage. Used to
+  /// gross the bill up so the café nets the full order value. Set to 0 to
+  /// absorb the cost instead. Only ever applied to card/UPI/net-banking.
+  onlinePaymentFeePercent Float  @default(2)
   updatedAt             DateTime @updatedAt
 
   @@map("settings")

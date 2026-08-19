@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Setting } from '@prisma/client';
 import {
   computeCouponDiscount,
+  computeOnlinePaymentFee,
   computeDeliveryFee,
   computeTax,
   computeTotals,
@@ -21,6 +22,7 @@ const settings: Setting = {
   expressDeliveryFee: 89,
   freeDeliveryThreshold: 499,
   packagingFee: 0,
+  onlinePaymentFeePercent: 2,
   updatedAt: new Date(),
 };
 
@@ -225,5 +227,86 @@ describe('order totals', () => {
   it('handles an empty cart without producing NaN', () => {
     const totals = computeTotals({ lines: [], orderType: 'DELIVERY', settings });
     expect(totals).toMatchObject({ subtotal: 0, discount: 0, tax: 0, total: 0 });
+  });
+});
+
+describe('online payment fee (gross-up)', () => {
+  it('is not charged on cash payments', () => {
+    expect(computeOnlinePaymentFee(1000, 'COD', 2)).toBe(0);
+    expect(computeOnlinePaymentFee(1000, 'PAY_AT_COUNTER', 2)).toBe(0);
+  });
+
+  it('is charged on card, UPI and net banking', () => {
+    for (const method of ['CARD', 'UPI', 'NETBANKING'] as const) {
+      expect(computeOnlinePaymentFee(1000, method, 2)).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * The whole point: after the gateway takes its cut of the *charged* amount,
+   * the café must still be left with the original order value. A naive
+   * "add 2%" leaves it short, because the fee applies to the larger sum too.
+   */
+  it('leaves the café with exactly the order value after the gateway’s cut', () => {
+    for (const net of [336, 1000, 2500, 199]) {
+      const fee = computeOnlinePaymentFee(net, 'CARD', 2);
+      const charged = net + fee;
+      const gatewayTakes = charged * 0.02;
+      expect(charged - gatewayTakes).toBeCloseTo(net, 0);
+    }
+  });
+
+  it('is bigger than a naive percentage of the original amount', () => {
+    // 2% of 1000 is 20, but grossing up needs 20.41 → 20.
+    expect(computeOnlinePaymentFee(1000, 'CARD', 2)).toBe(20);
+    // The real proof is at a value where rounding shows the difference.
+    expect(computeOnlinePaymentFee(336, 'CARD', 2)).toBe(7);
+  });
+
+  it('scales with the order rather than being a flat amount', () => {
+    const small = computeOnlinePaymentFee(336, 'CARD', 2);
+    const large = computeOnlinePaymentFee(2500, 'CARD', 2);
+    expect(large).toBeGreaterThan(small * 5);
+  });
+
+  it('is skipped when the café chooses to absorb the cost', () => {
+    expect(computeOnlinePaymentFee(1000, 'CARD', 0)).toBe(0);
+  });
+
+  it('is skipped when no method has been chosen yet', () => {
+    expect(computeOnlinePaymentFee(1000, undefined, 2)).toBe(0);
+  });
+
+  it('appears in the order total for online payments only', () => {
+    const online = computeTotals({
+      lines: [line({ subtotal: 1000, unitPrice: 1000 })],
+      orderType: 'PICKUP',
+      settings,
+      paymentMethod: 'CARD',
+    });
+    const cash = computeTotals({
+      lines: [line({ subtotal: 1000, unitPrice: 1000 })],
+      orderType: 'PICKUP',
+      settings,
+      paymentMethod: 'PAY_AT_COUNTER',
+    });
+
+    expect(online.paymentFee).toBeGreaterThan(0);
+    expect(cash.paymentFee).toBe(0);
+    expect(online.total).toBe(cash.total + online.paymentFee);
+  });
+
+  it('is computed on the whole bill, not just the food', () => {
+    // Delivery fee and tax are also processed by the gateway.
+    const totals = computeTotals({
+      lines: [line({ subtotal: 300, unitPrice: 300 })],
+      orderType: 'DELIVERY',
+      settings,
+      paymentMethod: 'UPI',
+    });
+
+    const beforeFee = totals.subtotal - totals.discount + totals.tax + totals.deliveryFee;
+    expect(totals.paymentFee).toBe(computeOnlinePaymentFee(beforeFee, 'UPI', 2));
+    expect(totals.total).toBe(beforeFee + totals.paymentFee);
   });
 });

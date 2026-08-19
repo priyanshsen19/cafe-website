@@ -1,4 +1,4 @@
-import type { Coupon, DeliverySpeed, OrderType, SelectionType, Setting } from '@prisma/client';
+import type { Coupon, DeliverySpeed, OrderType, PaymentMethod, SelectionType, Setting } from '@prisma/client';
 import { AppError } from '../utils/AppError';
 import { clampNonNegative, roundRupees } from '../utils/money';
 
@@ -46,11 +46,42 @@ export interface Totals {
   discount: number;
   tax: number;
   deliveryFee: number;
+  /** Gateway processing charge, on online payments only. */
+  paymentFee: number;
   total: number;
   taxRatePercent: number;
   freeDeliveryThreshold: number;
   /** How much more the customer needs to spend to unlock free delivery. */
   amountToFreeDelivery: number;
+}
+
+/** Methods the gateway charges us for. Cash costs nothing to collect. */
+const ONLINE_METHODS: PaymentMethod[] = ['UPI', 'CARD', 'NETBANKING'];
+
+/**
+ * The gateway keeps a percentage of whatever it charges, so simply adding that
+ * percentage still leaves the café short — the fee applies to the larger amount
+ * too. This grosses up instead:
+ *
+ *     charged − charged × rate = net        (what we need to receive)
+ *     charged = net ÷ (1 − rate)
+ *
+ * At 2% on ₹336 that's ₹342.86 charged, ₹6.86 taken, ₹336.00 settled — which is
+ * exactly the amount a full refund later needs to be available.
+ *
+ * Cash orders never carry this: nobody processes them.
+ */
+export function computeOnlinePaymentFee(
+  amountBeforeFee: number,
+  paymentMethod: PaymentMethod | undefined,
+  ratePercent: number,
+): number {
+  if (!paymentMethod || !ONLINE_METHODS.includes(paymentMethod)) return 0;
+  if (ratePercent <= 0 || ratePercent >= 100) return 0;
+  if (amountBeforeFee <= 0) return 0;
+
+  const charged = amountBeforeFee / (1 - ratePercent / 100);
+  return roundRupees(charged - amountBeforeFee);
 }
 
 /** Unit price = menu price + the sum of the selected option deltas. */
@@ -168,8 +199,10 @@ export function computeTotals(input: {
   settings: Setting;
   coupon?: Pick<Coupon, 'discountType' | 'discountValue' | 'maxDiscount'> | null;
   deliverySpeed?: DeliverySpeed;
+  /** Determines whether a gateway fee applies. Omitted until it's chosen. */
+  paymentMethod?: PaymentMethod;
 }): Totals {
-  const { lines, orderType, settings, coupon, deliverySpeed = 'STANDARD' } = input;
+  const { lines, orderType, settings, coupon, deliverySpeed = 'STANDARD', paymentMethod } = input;
 
   const subtotal = lines.reduce((sum, line) => sum + line.subtotal, 0);
 
@@ -181,6 +214,7 @@ export function computeTotals(input: {
       discount: 0,
       tax: 0,
       deliveryFee: 0,
+      paymentFee: 0,
       total: 0,
       taxRatePercent: settings.taxRatePercent,
       freeDeliveryThreshold: settings.freeDeliveryThreshold,
@@ -194,7 +228,13 @@ export function computeTotals(input: {
   const deliveryFee = computeDeliveryFee(orderType, discountedSubtotal, settings, deliverySpeed);
   const tax = computeTax(discountedSubtotal, settings.taxRatePercent);
   const packaging = orderType === 'DINE_IN' ? 0 : settings.packagingFee;
-  const total = discountedSubtotal + tax + deliveryFee + packaging;
+
+  // The fee is computed on everything else, because the gateway takes its cut
+  // of the whole charged amount — not just the food.
+  const amountBeforeFee = discountedSubtotal + tax + deliveryFee + packaging;
+  const paymentFee = computeOnlinePaymentFee(amountBeforeFee, paymentMethod, settings.onlinePaymentFeePercent);
+
+  const total = amountBeforeFee + paymentFee;
 
   const amountToFreeDelivery =
     orderType === 'DELIVERY' && deliverySpeed === 'STANDARD'
@@ -206,6 +246,7 @@ export function computeTotals(input: {
     discount,
     tax,
     deliveryFee,
+    paymentFee,
     total,
     taxRatePercent: settings.taxRatePercent,
     freeDeliveryThreshold: settings.freeDeliveryThreshold,

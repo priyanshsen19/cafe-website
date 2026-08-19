@@ -80,6 +80,8 @@ export default function Checkout() {
     orderType,
     couponCode: appliedCoupon,
     deliverySpeed,
+    // Re-prices when the method changes: online payments carry a gateway fee.
+    paymentMethod,
   });
 
   const { data: cafes } = useQuery({
@@ -197,6 +199,7 @@ export default function Checkout() {
         discount: settlingOrder.discount,
         tax: settlingOrder.tax,
         deliveryFee: settlingOrder.deliveryFee,
+        paymentFee: settlingOrder.paymentFee,
         total: settlingOrder.total,
         taxRatePercent: cart?.totals.taxRatePercent ?? 5,
         freeDeliveryThreshold: cart?.totals.freeDeliveryThreshold ?? 0,
@@ -611,6 +614,12 @@ export default function Checkout() {
                       <dd className="tabular-nums text-foreground">
                         {totals.deliveryFee === 0 ? <span className="text-olive">Free</span> : formatINR(totals.deliveryFee)}
                       </dd>
+                    </div>
+                  )}
+                  {totals.paymentFee > 0 && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Payment processing</dt>
+                      <dd className="tabular-nums text-foreground">{formatINR(totals.paymentFee)}</dd>
                     </div>
                   )}
                 </dl>

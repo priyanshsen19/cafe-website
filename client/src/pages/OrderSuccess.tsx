@@ -262,6 +262,12 @@ export default function OrderSuccess() {
                 <dd className="tabular-nums text-foreground">{formatINR(order.deliveryFee)}</dd>
               </div>
             )}
+            {order.paymentFee > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Payment processing</dt>
+                <dd className="tabular-nums text-foreground">{formatINR(order.paymentFee)}</dd>
+              </div>
+            )}
           </dl>
 
           <Separator className="my-5" />
