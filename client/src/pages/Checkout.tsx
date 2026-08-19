@@ -22,7 +22,7 @@ import { useDineIn } from '@/contexts/DineInContext';
 import { useSeo } from '@/hooks/useUtils';
 import { cartKeys } from '@/hooks/useCart';
 import { cn, formatINR, formatTime } from '@/lib/utils';
-import type { DeliverySpeed, OrderType, PaymentMethod } from '@/types';
+import type { DeliverySpeed, Order, OrderType, PaymentMethod } from '@/types';
 
 /** Half-hour slots for the next twelve hours, for scheduled orders. */
 function buildTimeSlots(): { value: string; label: string }[] {
@@ -63,6 +63,15 @@ export default function Checkout() {
   const [appliedCoupon, setAppliedCoupon] = useState<string | undefined>();
   const [notes, setNotes] = useState('');
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
+  /**
+   * The order we're currently collecting payment for.
+   *
+   * Placing an order empties the cart, so from that moment the cart-derived
+   * summary reads ₹0 — while the payment sheet in front of it asks for the real
+   * amount. Holding the created order lets the page keep showing what is
+   * actually being charged.
+   */
+  const [settlingOrder, setSettlingOrder] = useState<Order | null>(null);
 
   const timeSlots = useMemo(buildTimeSlots, []);
 
@@ -164,6 +173,7 @@ export default function Checkout() {
 
       // Online payment: hand off to the gateway, then verify server-side.
       setPendingOrderId(order.id);
+      setSettlingOrder(order);
       const result = await payment.pay(order.id, {
         name: order.contactName,
         email: user?.email ?? '',
@@ -178,9 +188,33 @@ export default function Checkout() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const totals = cart?.totals;
-  const lines = cart?.lines ?? [];
-  const unavailable = cart?.unavailableLines ?? [];
+  // While a payment is in flight the cart is already empty server-side, so fall
+  // back to the order being paid for — the customer must never see ₹0 behind a
+  // sheet asking them for real money.
+  const totals = settlingOrder
+    ? {
+        subtotal: settlingOrder.subtotal,
+        discount: settlingOrder.discount,
+        tax: settlingOrder.tax,
+        deliveryFee: settlingOrder.deliveryFee,
+        total: settlingOrder.total,
+        taxRatePercent: cart?.totals.taxRatePercent ?? 5,
+        freeDeliveryThreshold: cart?.totals.freeDeliveryThreshold ?? 0,
+        amountToFreeDelivery: 0,
+      }
+    : cart?.totals;
+
+  const lines = settlingOrder
+    ? settlingOrder.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        subtotal: item.subtotal,
+        modifierSummary: item.modifierSummary,
+      }))
+    : (cart?.lines ?? []);
+
+  const unavailable = settlingOrder ? [] : (cart?.unavailableLines ?? []);
 
   // ── gating ──
   const blockers: string[] = [];
