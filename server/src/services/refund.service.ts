@@ -87,6 +87,7 @@ async function executeAtGateway(input: {
   provider: Refund['provider'];
   providerPaymentId: string | null;
   amount: number;
+  reason?: string;
 }): Promise<{ providerRefundId: string | null; status: Refund['status']; failureReason?: string }> {
   // Cash is handed back across the counter; there is no gateway involved.
   if (input.provider === 'CASH') {
@@ -100,21 +101,29 @@ async function executeAtGateway(input: {
 
     try {
       const client = new Razorpay({ key_id: env.RAZORPAY_KEY_ID, key_secret: env.RAZORPAY_KEY_SECRET });
-      // Razorpay works in the smallest currency unit.
-      const created = await client.payments.refund(input.providerPaymentId, { amount: input.amount * 100 });
+
+      const created = await client.payments.refund(input.providerPaymentId, {
+        // Razorpay works in the smallest currency unit.
+        amount: input.amount * 100,
+        // `optimum` returns instantly where the rails allow it and falls back to
+        // the normal 5–7 day path otherwise.
+        speed: 'optimum',
+        notes: { reason: input.reason?.slice(0, 200) ?? 'Refund issued by ALAAP' },
+      });
 
       return {
         providerRefundId: created.id,
-        // Razorpay reports `processed` once the money has left; anything else is
-        // still in flight and will be settled by the webhook.
+        // Razorpay reports `processed` once the money has left. Anything else is
+        // still in flight and gets settled by the refund webhook.
         status: created.status === 'processed' ? 'SUCCESS' : 'PROCESSING',
       };
     } catch (error) {
-      return {
-        providerRefundId: null,
-        status: 'FAILED',
-        failureReason: error instanceof Error ? error.message.slice(0, 200) : 'Gateway refused the refund',
-      };
+      // Razorpay errors carry the useful detail in error.description.
+      const description =
+        (error as { error?: { description?: string } })?.error?.description ??
+        (error instanceof Error ? error.message : 'Gateway refused the refund');
+
+      return { providerRefundId: null, status: 'FAILED', failureReason: description.slice(0, 200) };
     }
   }
 
@@ -158,6 +167,31 @@ export interface IssueRefundInput {
   reason?: string;
   /** Null when the system issues it automatically on cancellation. */
   issuedByUserId?: string | null;
+}
+
+/**
+ * Settles a refund from a gateway webhook. Refunds are asynchronous: Razorpay
+ * accepts one immediately and reports the true outcome minutes or days later,
+ * so this is the authoritative signal rather than the create-call's response.
+ */
+export async function settleRefundFromWebhook(input: {
+  providerRefundId: string;
+  status: 'SUCCESS' | 'FAILED';
+  failureReason?: string;
+}): Promise<void> {
+  const refund = await prisma.refund.findUnique({ where: { providerRefundId: input.providerRefundId } });
+  if (!refund || refund.status === input.status) return;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.refund.update({
+      where: { id: refund.id },
+      data: { status: input.status, failureReason: input.failureReason?.slice(0, 200) ?? null },
+    });
+
+    // A failed refund frees its amount up again, so the money can be returned
+    // by another attempt.
+    await syncPaymentStatus(tx, refund.orderId);
+  });
 }
 
 /**
@@ -210,6 +244,7 @@ export async function issueRefund(input: IssueRefundInput) {
     provider: payment.provider,
     providerPaymentId: payment.providerPaymentId,
     amount,
+    reason: input.reason,
   });
 
   const refund = await prisma.$transaction(async (tx) => {

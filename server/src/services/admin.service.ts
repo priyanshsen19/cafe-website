@@ -2,9 +2,16 @@ import type { OrderStatus, OrderType, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { orderDetailInclude, toOrderSummary } from './order.service';
-import { isActive } from '../utils/orderFlow';
+import { KITCHEN_STATUSES, isActive } from '../utils/orderFlow';
 
-const EXCLUDE_CANCELLED = { orderStatus: { not: 'CANCELLED' as OrderStatus } };
+/**
+ * What counts as real business. Cancelled orders obviously don't — and neither
+ * do orders still awaiting payment, which would otherwise inflate revenue with
+ * money nobody has actually sent.
+ */
+const EXCLUDE_CANCELLED = {
+  orderStatus: { notIn: ['CANCELLED', 'AWAITING_PAYMENT'] as OrderStatus[] },
+};
 
 function startOfDay(date = new Date()): Date {
   const copy = new Date(date);
@@ -145,10 +152,10 @@ export async function listOrders(filter: {
 /** The kitchen board: only live orders, oldest first, with an age in minutes. */
 export async function getKitchenBoard() {
   const orders = await prisma.order.findMany({
-    where: {
-      orderStatus: { in: ['PLACED', 'CONFIRMED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'] },
-      OR: [{ paymentStatus: { in: ['SUCCESS', 'PENDING'] } }],
-    },
+    // KITCHEN_STATUSES deliberately excludes AWAITING_PAYMENT: the kitchen must
+    // never start cooking something nobody has paid for. Cash orders are here
+    // with paymentStatus PENDING, which is correct — they settle at handover.
+    where: { orderStatus: { in: KITCHEN_STATUSES } },
     include: orderDetailInclude,
     orderBy: { createdAt: 'asc' },
     take: 60,

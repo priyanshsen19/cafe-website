@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Package, RotateCcw, Star } from 'lucide-react';
+import { CreditCard, Package, RotateCcw, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/misc';
@@ -13,6 +13,9 @@ import { ReviewDialog } from '@/components/orders/ReviewDialog';
 import { RefundBadgeText } from '@/components/orders/RefundNotice';
 import { orderApi } from '@/api/endpoints';
 import { cartKeys } from '@/hooks/useCart';
+import { usePayment } from '@/hooks/usePayment';
+import { useAuth } from '@/contexts/AuthContext';
+import { MockGateway } from '@/components/checkout/MockGateway';
 import { useUiStore } from '@/store/ui';
 import { useSeo } from '@/hooks/useUtils';
 import { formatDate, formatINR, humanise, pluralise } from '@/lib/utils';
@@ -34,6 +37,28 @@ export default function AccountOrders() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const openCart = useUiStore((state) => state.openCart);
+  const { user } = useAuth();
+  const payment = usePayment();
+
+  /** Resumes payment on an order that was created but never paid for. */
+  const payNow = useMutation({
+    mutationFn: async (orderId: string) => {
+      const result = await payment.pay(
+        orderId,
+        { name: user?.name ?? '', email: user?.email ?? '', phone: user?.phone ?? '' },
+        true,
+      );
+      return { ...result, orderId };
+    },
+    onSuccess: (result) => {
+      if (result.ok) {
+        void queryClient.invalidateQueries({ queryKey: ['orders'] });
+        toast.success('Payment received — your order is confirmed');
+        navigate(`/orders/${result.orderId}/success`);
+      }
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['orders', filter],
@@ -198,9 +223,17 @@ export default function AccountOrders() {
                   <RotateCcw className="h-3.5 w-3.5" />
                   Order again
                 </Button>
-                {order.paymentStatus === 'FAILED' && (
-                  <Button size="sm" variant="accent" onClick={() => navigate(`/orders/${order.id}/success`)}>
-                    Retry payment
+                {/* An unpaid order is recoverable — pay it here rather than
+                    rebuilding the cart from scratch. */}
+                {(order.orderStatus === 'AWAITING_PAYMENT' || order.paymentStatus === 'FAILED') && (
+                  <Button
+                    size="sm"
+                    variant="accent"
+                    loading={payNow.isPending && payNow.variables === order.id}
+                    onClick={() => payNow.mutate(order.id)}
+                  >
+                    <CreditCard className="h-3.5 w-3.5" />
+                    Pay {formatINR(order.total)}
                   </Button>
                 )}
               </div>
@@ -213,6 +246,24 @@ export default function AccountOrders() {
         product={reviewProduct}
         open={Boolean(reviewProduct)}
         onOpenChange={(open) => !open && setReviewProduct(null)}
+      />
+
+      {/* Development gateway, used when PAYMENT_MODE=mock. With real Razorpay
+          keys the hosted Checkout sheet opens instead and this never shows. */}
+      <MockGateway
+        session={payment.session}
+        open={payment.isMockOpen}
+        isVerifying={payment.isVerifying}
+        onConfirm={(paymentId, signature) => {
+          void payment.confirmMock(paymentId, signature).then((ok) => {
+            if (ok) {
+              void queryClient.invalidateQueries({ queryKey: ['orders'] });
+              toast.success('Payment received — your order is confirmed');
+            }
+          });
+        }}
+        onFail={() => void payment.failMock().then(() => queryClient.invalidateQueries({ queryKey: ['orders'] }))}
+        onCancel={() => void payment.cancelMock()}
       />
     </div>
   );

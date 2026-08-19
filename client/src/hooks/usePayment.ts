@@ -11,14 +11,19 @@ interface RazorpayOptions {
   name: string;
   description: string;
   order_id: string;
+  image?: string;
   theme?: { color?: string };
-  prefill?: { name?: string; email?: string; contact?: string };
+  prefill?: { name?: string; email?: string; contact?: string; method?: string };
+  notes?: Record<string, string>;
+  /** Opens Checkout on the tab the customer already chose on our page. */
+  config?: { display?: { blocks?: unknown; sequence?: string[]; preferences?: { show_default_blocks?: boolean } } };
+  retry?: { enabled?: boolean };
   handler: (response: {
     razorpay_order_id: string;
     razorpay_payment_id: string;
     razorpay_signature: string;
   }) => void;
-  modal?: { ondismiss?: () => void };
+  modal?: { ondismiss?: () => void; confirm_close?: boolean; escape?: boolean };
 }
 
 declare global {
@@ -110,7 +115,17 @@ export function usePayment() {
           description: `Order ${created.orderNumber}`,
           order_id: created.providerOrderId,
           theme: { color: '#2A1F1A' },
-          prefill: { name: customer.name, email: customer.email, contact: customer.phone },
+          notes: { orderNumber: created.orderNumber },
+          retry: { enabled: true },
+          // Identity only — the card number, CVV and UPI PIN are typed into
+          // Razorpay's own hosted form, never ours.
+          prefill: {
+            name: created.prefill?.name ?? customer.name,
+            email: created.prefill?.email ?? customer.email,
+            contact: created.prefill?.contact ?? customer.phone,
+            // Opens Checkout on the method the customer already picked.
+            ...(created.method ? { method: created.method } : {}),
+          },
           handler: (response) => {
             setVerifying(true);
             paymentApi
@@ -127,11 +142,13 @@ export function usePayment() {
               .finally(() => setVerifying(false));
           },
           modal: {
+            // Ask before discarding a payment in progress.
+            confirm_close: true,
             ondismiss: () => {
               void paymentApi
                 .fail(created.providerOrderId, 'Payment window closed')
                 .catch(() => undefined);
-              toast.error('Payment was not completed. Your order is saved — you can pay again from your orders.');
+              toast.error('Payment wasn’t completed, so your order hasn’t been placed. You can pay again from your orders.');
               resolve({ ok: false, orderId });
             },
           },

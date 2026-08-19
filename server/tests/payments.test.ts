@@ -106,7 +106,8 @@ describe('signature verification', () => {
 
     const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
     expect(order.paymentStatus).toBe('FAILED');
-    expect(order.orderStatus).toBe('PLACED');
+    // A forged signature must never promote the order out of AWAITING_PAYMENT.
+    expect(order.orderStatus).toBe('AWAITING_PAYMENT');
   });
 
   it('rejects a signature that is valid for a different payment id', async () => {

@@ -216,7 +216,11 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
         couponCode: coupon?.code,
         paymentMethod: input.paymentMethod,
         paymentStatus: 'PENDING',
-        orderStatus: 'PLACED',
+        // Cash orders are real the moment they're placed — the money arrives at
+        // handover. Card/UPI orders are not: until the gateway confirms, this
+        // is only an intent to order, so it stays out of the kitchen and out of
+        // revenue until payment is verified.
+        orderStatus: isCashLike ? 'PLACED' : 'AWAITING_PAYMENT',
         estimatedReadyAt: new Date((scheduledFor ?? new Date()).getTime() + prepMinutes * 60_000),
         items: {
           create: lines.map((line) => ({
@@ -246,7 +250,12 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
             },
           })),
         },
-        statusHistory: { create: { status: 'PLACED', note: 'Order received' } },
+        statusHistory: {
+          create: {
+            status: isCashLike ? 'PLACED' : 'AWAITING_PAYMENT',
+            note: isCashLike ? 'Order received' : 'Waiting for payment',
+          },
+        },
         payments: {
           create: {
             provider: isCashLike ? 'CASH' : 'RAZORPAY',
@@ -301,7 +310,12 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
     return created;
   });
 
-  emitOrderEvent('order:created', order, toOrderSummary(order));
+  // Only announce orders the kitchen should actually see. An unpaid order is
+  // broadcast to nobody until its payment clears.
+  if (order.orderStatus === 'PLACED') {
+    emitOrderEvent('order:created', order, toOrderSummary(order));
+  }
+
   return order;
 }
 
@@ -411,8 +425,36 @@ export function toOrderSummary(order: OrderDetail) {
 
 /** The tracking timeline: every step of this order type, with what's done. */
 export function buildTracking(order: OrderDetail) {
-  const flow = ORDER_FLOW[order.orderType];
   const historyByStatus = new Map(order.statusHistory.map((entry) => [entry.status, entry]));
+
+  /**
+   * An unpaid order has no fulfilment progress to show — nothing has been sent
+   * to the kitchen. Showing the normal timeline with every step grey would
+   * imply the café is working on it. Instead the timeline is replaced by the
+   * one step that actually matters: paying.
+   */
+  if (order.orderStatus === 'AWAITING_PAYMENT') {
+    const entry = historyByStatus.get('AWAITING_PAYMENT');
+    return {
+      order: toOrderSummary(order),
+      isCancelled: false,
+      cancelledReason: null,
+      awaitingPayment: true,
+      steps: [
+        {
+          status: 'AWAITING_PAYMENT' as const,
+          label: 'Awaiting payment',
+          description:
+            'Your order is held for you but hasn’t been sent to the kitchen yet. Complete payment to confirm it.',
+          at: entry?.createdAt ?? order.createdAt,
+          isComplete: false,
+          isCurrent: true,
+        },
+      ],
+    };
+  }
+
+  const flow = ORDER_FLOW[order.orderType];
   const currentIndex = flow.indexOf(order.orderStatus);
 
   const steps = flow.map((status, index) => {
@@ -431,6 +473,7 @@ export function buildTracking(order: OrderDetail) {
     order: toOrderSummary(order),
     isCancelled: order.orderStatus === 'CANCELLED',
     cancelledReason: order.cancelledReason,
+    awaitingPayment: false,
     steps,
   };
 }

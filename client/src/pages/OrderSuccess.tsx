@@ -144,12 +144,15 @@ export default function OrderSuccess() {
   const isPaid = order.paymentStatus === 'SUCCESS';
   const isPayLater = order.paymentMethod === 'COD' || order.paymentMethod === 'PAY_AT_COUNTER';
   const paymentFailed = order.paymentStatus === 'FAILED';
+  // An online order that was never paid for is not a placed order, and this
+  // page must not tell the customer otherwise.
+  const awaitingPayment = order.orderStatus === 'AWAITING_PAYMENT';
 
   return (
     <div className="container max-w-2xl py-14 lg:py-20">
       {/* ── confirmation ── */}
       <div className="flex flex-col items-center text-center">
-        <SuccessMark isPaid={isPaid || isPayLater} />
+        <SuccessMark isPaid={(isPaid || isPayLater) && !awaitingPayment} />
 
         <motion.h1
           initial={{ opacity: 0, y: 12 }}
@@ -157,19 +160,29 @@ export default function OrderSuccess() {
           transition={{ duration: 0.5, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
           className="mt-7 text-display-sm text-foreground text-balance"
         >
-          {paymentFailed ? 'Your order is saved.' : 'Your order is confirmed.'}
+          {awaitingPayment
+            ? 'Almost there — your payment isn’t complete.'
+            : paymentFailed
+              ? 'Your order is saved.'
+              : 'Your order is confirmed.'}
         </motion.h1>
 
         <p className="mt-3 font-display text-xl text-muted-foreground tabular-nums">Order {order.orderNumber}</p>
 
-        {paymentFailed ? (
-          <div className="mt-6 flex gap-3 rounded-md border border-destructive/25 bg-destructive/[0.04] p-4 text-left">
-            <AlertTriangle className="mt-px h-4 w-4 shrink-0 text-destructive" aria-hidden />
+        {awaitingPayment || paymentFailed ? (
+          <div className="mt-6 flex gap-3 rounded-md border border-terracotta/30 bg-terracotta/[0.06] p-4 text-left">
+            <AlertTriangle className="mt-px h-4 w-4 shrink-0 text-terracotta" aria-hidden />
             <div>
-              <p className="font-sans text-sm font-medium text-foreground">Payment could not be completed</p>
-              <p className="mt-1 font-sans text-[0.8125rem] text-muted-foreground">
-                Nothing has been charged. You can pay again from your order, or settle at the counter.
+              <p className="font-sans text-sm font-medium text-foreground">
+                {awaitingPayment ? 'This order hasn’t been placed yet' : 'Payment could not be completed'}
               </p>
+              <p className="mt-1 font-sans text-[0.8125rem] leading-relaxed text-muted-foreground">
+                Nothing has been charged. We’ve held your items, but the kitchen won’t start until payment
+                goes through.
+              </p>
+              <Button asChild size="sm" className="mt-3.5">
+                <Link to="/account/orders">Complete payment</Link>
+              </Button>
             </div>
           </div>
         ) : (

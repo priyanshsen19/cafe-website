@@ -68,6 +68,13 @@ Browse the café  →  Explore the menu  →  Customise a dish  →  Add to cart
 
 **Payments**
 
+- **An online order is not an order until it is paid for.** Card/UPI orders are
+  created as `AWAITING_PAYMENT`: held for the customer, but invisible to the kitchen, excluded from
+  revenue, and impossible for staff to advance. Only a gateway-verified payment promotes them to
+  `PLACED`. Cash orders are unaffected — they settle at handover.
+- Card and UPI details are collected by **Razorpay Checkout on Razorpay's own PCI-compliant surface**.
+  This application never sees, transmits or stores a card number, CVV or UPI PIN — it only sends
+  identity (name, email, phone) to prefill the gateway's form.
 - Razorpay integration with **server-side HMAC signature verification**
 - A `PAYMENT_MODE=mock` development gateway that exercises the *same* verification path with a real
   signature — it is not a bypass, and the server refuses to boot with it in production
@@ -328,7 +335,22 @@ For the real gateway:
 2. Set `PAYMENT_MODE=razorpay` and both keys in `server/.env`
 3. Restart the API
 
-Test card `4111 1111 1111 1111`, any future expiry, any CVV.
+Razorpay's test instruments, entered in Checkout's own form:
+
+| Method | Value |
+|---|---|
+| Card | `4111 1111 1111 1111`, any future expiry, any CVV |
+| UPI (success) | `success@razorpay` |
+| UPI (failure) | `failure@razorpay` |
+| Net banking | any bank, then choose success or failure |
+
+### Why card details aren't collected by this app
+
+Capturing a raw card number yourself requires Razorpay's S2S/Custom Checkout product, which is gated
+behind PCI-DSS certification and manual approval — and it pulls the whole application into PCI-DSS
+SAQ-D scope. Checkout's hosted sheet gives the customer a real card and UPI form without any of that,
+which is why the integration is built this way. If a fully custom-branded form is ever genuinely
+needed, S2S is the documented upgrade path and requires certification first.
 
 To verify webhooks locally, expose the API (`ngrok http 4000`), point a Razorpay webhook at
 `/api/payments/webhook` for `payment.captured` and `payment.failed`, and set

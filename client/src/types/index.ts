@@ -38,6 +38,7 @@ export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING';
 export type AddressType = 'HOME' | 'WORK' | 'OTHER';
 
 export type OrderStatus =
+  | 'AWAITING_PAYMENT'
   | 'PLACED'
   | 'CONFIRMED'
   | 'PREPARING'
@@ -260,6 +261,8 @@ export interface Tracking {
   order: Order;
   isCancelled: boolean;
   cancelledReason: string | null;
+  /** The order exists but hasn't been paid for, so it isn't with the kitchen. */
+  awaitingPayment: boolean;
   steps: TrackingStep[];
 }
 
@@ -329,6 +332,8 @@ export interface CheckoutSession {
   amount: number;
   currency: string;
   orderNumber: string;
+  method: 'upi' | 'card' | 'netbanking' | null;
+  prefill: { name: string; email: string; contact: string };
   mockPaymentId?: string;
   mockSignature?: string;
 }

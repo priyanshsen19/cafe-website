@@ -9,6 +9,7 @@ import {
   ChefHat,
   CircleDot,
   Clock,
+  CreditCard,
   Package,
   QrCode,
   Radio,
@@ -29,6 +30,7 @@ import { cn, formatINR, formatTime, humanise } from '@/lib/utils';
 import type { OrderStatus } from '@/types';
 
 const STEP_ICONS: Record<OrderStatus, typeof Check> = {
+  AWAITING_PAYMENT: CreditCard,
   PLACED: Receipt,
   CONFIRMED: Check,
   PREPARING: ChefHat,

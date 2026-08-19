@@ -61,6 +61,10 @@ enum DeliverySpeed {
 }
 
 enum OrderStatus {
+  /// Created, but the customer hasn't paid yet. Deliberately *not* a real
+  /// order: it never reaches the kitchen and never counts towards revenue.
+  /// Only a gateway-verified payment promotes it to PLACED.
+  AWAITING_PAYMENT
   PLACED
   CONFIRMED
   PREPARING

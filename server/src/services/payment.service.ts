@@ -6,6 +6,7 @@ import { prisma } from '../config/prisma';
 import { AppError } from '../utils/AppError';
 import { emitOrderEvent } from '../sockets';
 import { orderDetailInclude, toOrderSummary, updateStatus } from './order.service';
+import { settleRefundFromWebhook } from './refund.service';
 
 /**
  * Payment integrity rests on one rule: the browser is never believed. The
@@ -55,17 +56,31 @@ export interface CheckoutSession {
   amount: number;
   currency: string;
   orderNumber: string;
+  /** Which method the customer chose, so Checkout can open on that tab. */
+  method: 'upi' | 'card' | 'netbanking' | null;
+  /** Prefill for the gateway's own form — never card data, only identity. */
+  prefill: { name: string; email: string; contact: string };
   /** Mock mode only: lets the dev UI produce a valid signature to verify. */
   mockPaymentId?: string;
   mockSignature?: string;
 }
+
+/** Our payment method names mapped onto Razorpay Checkout's method keys. */
+const RAZORPAY_METHOD: Partial<Record<string, 'upi' | 'card' | 'netbanking'>> = {
+  UPI: 'upi',
+  CARD: 'card',
+  NETBANKING: 'netbanking',
+};
 
 /**
  * Creates the gateway order. The amount comes from the persisted order total,
  * never from the request body.
  */
 export async function createCheckoutSession(orderId: string, userId: string): Promise<CheckoutSession> {
-  const order = await prisma.order.findFirst({ where: { id: orderId, userId } });
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId },
+    include: { user: { select: { name: true, email: true, phone: true } } },
+  });
   if (!order) throw AppError.notFound('We couldn’t find that order.', 'ORDER_NOT_FOUND');
 
   if (order.paymentStatus === 'SUCCESS') {
@@ -114,6 +129,14 @@ export async function createCheckoutSession(orderId: string, userId: string): Pr
     amount: order.total,
     currency: 'INR',
     orderNumber: order.orderNumber,
+    method: RAZORPAY_METHOD[order.paymentMethod] ?? null,
+    // Identity only. Card numbers, CVVs and UPI PINs are collected by the
+    // gateway on its own PCI-compliant surface and never touch this server.
+    prefill: {
+      name: order.contactName || order.user.name,
+      email: order.user.email,
+      contact: order.contactPhone || order.user.phone,
+    },
   };
 
   if (env.PAYMENT_MODE === 'mock') {
@@ -182,9 +205,22 @@ export async function verifyPayment(input: VerifyInput, userId: string) {
     data: { paymentStatus: 'SUCCESS' },
   });
 
-  // A paid order is accepted automatically so it reaches the kitchen board.
+  /**
+   * Payment is what makes an intent into an order.
+   *
+   * An online order sits in AWAITING_PAYMENT — invisible to the kitchen — until
+   * this point. Verifying the signature promotes it to PLACED (so it appears on
+   * the board and counts as revenue) and then accepts it, which is the moment
+   * the customer's tracking page comes alive.
+   */
+  if (payment.order.orderStatus === 'AWAITING_PAYMENT') {
+    await updateStatus(payment.orderId, 'PLACED', { note: 'Payment received', actorRole: 'ADMIN' }).catch(
+      () => undefined,
+    );
+  }
+
   const confirmed = await updateStatus(payment.orderId, 'CONFIRMED', {
-    note: 'Payment received',
+    note: 'Payment confirmed',
     actorRole: 'ADMIN',
   }).catch(async () => {
     return prisma.order.findUniqueOrThrow({ where: { id: payment.orderId }, include: orderDetailInclude });
@@ -233,8 +269,26 @@ export async function handleWebhook(rawBody: Buffer | undefined, signature: stri
 
   const event = JSON.parse(rawBody.toString('utf8')) as {
     event: string;
-    payload?: { payment?: { entity?: { id: string; order_id: string; error_description?: string } } };
+    payload?: {
+      payment?: { entity?: { id: string; order_id: string; error_description?: string } };
+      refund?: { entity?: { id: string; status?: string; error_description?: string } };
+    };
   };
+
+  // ── refund outcomes ──
+  // Razorpay accepts a refund immediately and reports the real result later.
+  // This is the authoritative signal that the money actually went back.
+  if (event.event === 'refund.processed' || event.event === 'refund.failed') {
+    const refundEntity = event.payload?.refund?.entity;
+    if (refundEntity?.id) {
+      await settleRefundFromWebhook({
+        providerRefundId: refundEntity.id,
+        status: event.event === 'refund.processed' ? 'SUCCESS' : 'FAILED',
+        failureReason: refundEntity.error_description,
+      });
+    }
+    return { received: true };
+  }
 
   const entity = event.payload?.payment?.entity;
   if (!entity?.order_id) return { received: true };
@@ -262,7 +316,15 @@ export async function handleWebhook(rawBody: Buffer | undefined, signature: stri
     include: orderDetailInclude,
   });
 
-  if (nextStatus === 'SUCCESS' && order.orderStatus === 'PLACED') {
+  /**
+   * The webhook is the safety net for a customer who paid and then closed the
+   * tab before the browser callback fired. It has to be able to promote an
+   * order all the way from unpaid to confirmed on its own.
+   */
+  if (nextStatus === 'SUCCESS') {
+    if (order.orderStatus === 'AWAITING_PAYMENT') {
+      await updateStatus(order.id, 'PLACED', { note: 'Payment captured', actorRole: 'ADMIN' }).catch(() => undefined);
+    }
     await updateStatus(order.id, 'CONFIRMED', { note: 'Payment captured', actorRole: 'ADMIN' }).catch(() => undefined);
   } else {
     emitOrderEvent('order:updated', order, toOrderSummary(order));

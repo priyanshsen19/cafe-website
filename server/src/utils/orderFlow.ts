@@ -21,6 +21,7 @@ export const TERMINAL_STATUS: Record<OrderType, OrderStatus> = {
 
 /** Customer-facing labels, phrased per order type. */
 export const STATUS_LABEL: Record<OrderStatus, string> = {
+  AWAITING_PAYMENT: 'Awaiting payment',
   PLACED: 'Order placed',
   CONFIRMED: 'Confirmed',
   PREPARING: 'Preparing',
@@ -42,6 +43,7 @@ export function statusLabel(status: OrderStatus, orderType: OrderType): string {
 }
 
 export const STATUS_DESCRIPTION: Record<OrderStatus, string> = {
+  AWAITING_PAYMENT: 'Waiting for your payment to complete.',
   PLACED: 'We’ve received your order.',
   CONFIRMED: 'The counter has accepted your order.',
   PREPARING: 'Your order is being made now.',
@@ -54,6 +56,8 @@ export const STATUS_DESCRIPTION: Record<OrderStatus, string> = {
 };
 
 const EVENT_FOR_STATUS: Record<OrderStatus, OrderEvent> = {
+  // Nothing is broadcast for an unpaid order — the kitchen must not see it.
+  AWAITING_PAYMENT: 'order:updated',
   PLACED: 'order:created',
   CONFIRMED: 'order:accepted',
   PREPARING: 'order:preparing',
@@ -76,6 +80,16 @@ export function eventForStatus(status: OrderStatus): OrderEvent {
 export function canTransition(orderType: OrderType, from: OrderStatus, to: OrderStatus): boolean {
   if (from === to) return false;
   if (from === 'CANCELLED') return false;
+
+  /**
+   * An unpaid order has exactly two futures: it gets paid and becomes a real
+   * order, or it is abandoned and cancelled. Staff cannot drag it onto the
+   * kitchen board, because nobody has paid for it.
+   */
+  if (from === 'AWAITING_PAYMENT') return to === 'PLACED' || to === 'CANCELLED';
+  // Nothing ever goes back to awaiting payment.
+  if (to === 'AWAITING_PAYMENT') return false;
+
   if (to === 'CANCELLED') return from === 'PLACED' || from === 'CONFIRMED' || from === 'PREPARING';
 
   const flow = ORDER_FLOW[orderType];
@@ -88,4 +102,18 @@ export function canTransition(orderType: OrderType, from: OrderStatus, to: Order
 
 export function isActive(status: OrderStatus): boolean {
   return !['DELIVERED', 'COLLECTED', 'SERVED', 'CANCELLED'].includes(status);
+}
+
+/** Statuses the kitchen should act on — an unpaid order is not one of them. */
+export const KITCHEN_STATUSES: OrderStatus[] = [
+  'PLACED',
+  'CONFIRMED',
+  'PREPARING',
+  'READY',
+  'OUT_FOR_DELIVERY',
+];
+
+/** True while the customer still owes us money for an order that isn't live. */
+export function isAwaitingPayment(status: OrderStatus): boolean {
+  return status === 'AWAITING_PAYMENT';
 }
