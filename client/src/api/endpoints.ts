@@ -172,6 +172,10 @@ export const paymentApi = {
 
   fail: (razorpayOrderId: string, reason?: string) =>
     api.post<{ ok: true }>('/payments/failed', { razorpayOrderId, reason }),
+
+  /** Online methods the gateway account currently accepts. */
+  methods: () =>
+    api.get<{ mode: 'razorpay' | 'mock'; methods: PaymentMethod[] }>('/payments/methods'),
 };
 
 // ── account ─────────────────────────────────────────────────────────────────

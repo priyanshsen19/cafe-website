@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { paymentApi } from '@/api/endpoints';
 import type { CheckoutSession } from '@/types';
@@ -210,4 +211,19 @@ export function usePayment() {
   }, [session]);
 
   return { session, isMockOpen, isVerifying, pay, confirmMock, failMock, cancelMock, reset };
+}
+
+/**
+ * The online methods the gateway will actually accept right now.
+ *
+ * Availability is an account setting on the gateway's side, so the answer can
+ * change without this app changing — the checkout asks rather than assumes,
+ * and a method switched on in the dashboard shows up here on its own.
+ */
+export function useEnabledPaymentMethods() {
+  return useQuery({
+    queryKey: ['payments', 'methods'],
+    queryFn: () => paymentApi.methods(),
+    staleTime: 5 * 60_000,
+  });
 }

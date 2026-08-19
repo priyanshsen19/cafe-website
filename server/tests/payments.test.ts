@@ -275,3 +275,16 @@ describe('failed and retried payments', () => {
     expect(response.body.error.code).toBe('ALREADY_PAID');
   });
 });
+
+describe('gateway method availability', () => {
+  it('offers every online method while payments are simulated', async () => {
+    const response = await request(f.app).get('/api/payments/methods').expect(200);
+
+    expect(response.body.mode).toBe('mock');
+    expect(response.body.methods).toEqual(expect.arrayContaining(['UPI', 'CARD', 'NETBANKING']));
+  });
+
+  it('is readable without signing in, because Checkout reads it too', async () => {
+    await request(f.app).get('/api/payments/methods').expect(200);
+  });
+});

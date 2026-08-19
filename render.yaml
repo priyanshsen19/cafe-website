@@ -57,14 +57,24 @@ services:
         value: https://alaap-web.onrender.com
 
       # ── Payments ──
-      # This is a portfolio demonstration, so the simulated gateway is used and
-      # explicitly acknowledged. To take real payments instead: set
-      # PAYMENT_MODE=razorpay, add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET, and
-      # remove ALLOW_MOCK_PAYMENTS.
+      # Razorpay's own test mode: a real gateway, real HMAC verification and
+      # real refunds, settled against test credentials rather than money. The
+      # keys are marked `sync: false`, so Render prompts for them once in the
+      # dashboard and never stores them in this file or in git.
+      #
+      # Going live is a credential change, not a code change: swap the test
+      # key pair for the live one. ALLOW_MOCK_PAYMENTS is deliberately absent —
+      # without it the server refuses to start in mock mode in production, so a
+      # misconfiguration fails loudly instead of quietly accepting fake money.
       - key: PAYMENT_MODE
-        value: mock
-      - key: ALLOW_MOCK_PAYMENTS
-        value: "true"
+        value: razorpay
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      # Optional: set once the webhook is configured in the Razorpay dashboard.
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
 
       # Loads the demo menu only when the database has no products at all.
       - key: SEED_ON_EMPTY

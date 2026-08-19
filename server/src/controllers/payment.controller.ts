@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { env } from '../config/env';
 import { asyncHandler } from '../utils/asyncHandler';
 import * as paymentService from '../services/payment.service';
 
@@ -32,4 +33,12 @@ export const webhook = asyncHandler(async (req: Request, res: Response) => {
 
   const result = await paymentService.handleWebhook(rawBody, signature);
   res.json(result);
+});
+
+/**
+ * The online methods this gateway account currently accepts, so the checkout
+ * never offers a customer a route the gateway will refuse.
+ */
+export const methods = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ mode: env.PAYMENT_MODE, methods: await paymentService.getEnabledOnlineMethods() });
 });

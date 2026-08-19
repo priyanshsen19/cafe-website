@@ -11,12 +11,12 @@ import { RadioGroup, RadioGroupItem, Separator } from '@/components/ui/form-cont
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/common/States';
 import { OrderTypeSelector } from '@/components/checkout/OrderTypeSelector';
-import { PaymentMethods, methodsFor } from '@/components/checkout/PaymentMethods';
+import { PaymentMethods, availableMethods } from '@/components/checkout/PaymentMethods';
 import { AddressPicker } from '@/components/checkout/AddressPicker';
 import { MockGateway } from '@/components/checkout/MockGateway';
 import { accountApi, orderApi, publicApi } from '@/api/endpoints';
 import { useCart } from '@/hooks/useCart';
-import { usePayment } from '@/hooks/usePayment';
+import { usePayment, useEnabledPaymentMethods } from '@/hooks/usePayment';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDineIn } from '@/contexts/DineInContext';
 import { useSeo } from '@/hooks/useUtils';
@@ -50,6 +50,7 @@ export default function Checkout() {
   const { user } = useAuth();
   const { session: tableSession } = useDineIn();
   const payment = usePayment();
+  const { data: enabledMethods } = useEnabledPaymentMethods();
 
   // ── selections ──
   const [orderType, setOrderType] = useState<OrderType>(tableSession ? 'DINE_IN' : 'DELIVERY');
@@ -115,11 +116,17 @@ export default function Checkout() {
     }
   }, [cafes, cafeId, tableSession]);
 
-  // Keep the payment method valid whenever the fulfilment type changes.
+  // Keep the payment method valid whenever the fulfilment type changes, and
+  // again once the gateway reports which methods it actually accepts. The
+  // default is UPI, which some gateway accounts have switched off — landing on
+  // it would send the customer into a modal that cannot complete.
+  const allowedMethods = availableMethods(orderType, enabledMethods?.methods);
+  const allowedKey = allowedMethods.join(',');
+
   useEffect(() => {
-    const allowed = methodsFor(orderType);
-    if (!allowed.includes(paymentMethod)) setPaymentMethod(allowed[0]!);
-  }, [orderType, paymentMethod]);
+    if (!allowedMethods.includes(paymentMethod)) setPaymentMethod(allowedMethods[0]!);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedKey, paymentMethod]);
 
   // A closed café can only take scheduled orders.
   const isClosed = serviceStatus ? !serviceStatus.isOpen : false;
@@ -489,7 +496,8 @@ export default function Checkout() {
               orderType={orderType}
               value={paymentMethod}
               onChange={setPaymentMethod}
-              paymentMode={payment.session?.mode ?? 'mock'}
+              paymentMode={payment.session?.mode ?? enabledMethods?.mode ?? 'mock'}
+              enabledOnline={enabledMethods?.methods}
             />
 
             <div className="mt-5">

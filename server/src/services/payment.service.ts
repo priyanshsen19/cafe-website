@@ -65,6 +65,55 @@ export interface CheckoutSession {
   mockSignature?: string;
 }
 
+export type OnlineMethod = 'UPI' | 'CARD' | 'NETBANKING';
+
+const ALL_ONLINE_METHODS: OnlineMethod[] = ['UPI', 'CARD', 'NETBANKING'];
+const METHOD_CACHE_MS = 5 * 60_000;
+
+let methodCache: { methods: OnlineMethod[]; fetchedAt: number } | null = null;
+
+/**
+ * Which online methods the gateway will actually accept.
+ *
+ * Method availability is an account setting in the Razorpay dashboard, not
+ * something this integration controls. Offering UPI while the account has it
+ * switched off strands the customer in a modal that cannot complete, so the
+ * checkout asks the gateway rather than assuming. Checkout.js reads this same
+ * preferences endpoint, which makes it the authoritative answer, and the short
+ * cache means enabling a method in the dashboard takes effect on its own —
+ * no redeploy, no code change.
+ */
+export async function getEnabledOnlineMethods(): Promise<OnlineMethod[]> {
+  // Mock mode simulates every method locally, so nothing is withheld.
+  if (env.PAYMENT_MODE !== 'razorpay') return ALL_ONLINE_METHODS;
+
+  if (methodCache && Date.now() - methodCache.fetchedAt < METHOD_CACHE_MS) {
+    return methodCache.methods;
+  }
+
+  try {
+    const url = `https://api.razorpay.com/v1/preferences?key_id=${encodeURIComponent(env.RAZORPAY_KEY_ID)}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) throw new Error(`preferences responded ${response.status}`);
+
+    const body = (await response.json()) as { methods?: Record<string, unknown> };
+    const enabled = body.methods ?? {};
+    const available = ALL_ONLINE_METHODS.filter((method) => Boolean(enabled[method.toLowerCase()]));
+
+    // An empty list almost certainly means the shape changed rather than that
+    // the account takes no payments at all; closing checkout entirely would be
+    // the worse failure, so fall back to offering everything.
+    const resolved = available.length > 0 ? available : ALL_ONLINE_METHODS;
+
+    methodCache = { methods: resolved, fetchedAt: Date.now() };
+    return resolved;
+  } catch {
+    // A momentarily unreachable gateway must not take the checkout down with
+    // it. Serve the last known answer, or assume everything works.
+    return methodCache?.methods ?? ALL_ONLINE_METHODS;
+  }
+}
+
 /** Our payment method names mapped onto Razorpay Checkout's method keys. */
 const RAZORPAY_METHOD: Partial<Record<string, 'upi' | 'card' | 'netbanking'>> = {
   UPI: 'upi',

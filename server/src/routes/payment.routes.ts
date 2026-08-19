@@ -15,6 +15,11 @@ const router = Router();
 // so it is mounted before the auth guard.
 router.post('/webhook', controller.webhook);
 
+// Which methods the gateway accepts is public information — Checkout.js reads
+// the same list from the browser — and the checkout needs it before it has
+// anything to write, so it sits ahead of the auth guard too.
+router.get('/methods', controller.methods);
+
 router.use(requireAuth);
 
 router.post('/create-order', writeLimiter, validate(createPaymentSchema), controller.createOrder);

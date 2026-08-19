@@ -339,10 +339,23 @@ Razorpay's test instruments, entered in Checkout's own form:
 
 | Method | Value |
 |---|---|
-| Card | `4111 1111 1111 1111`, any future expiry, any CVV |
+| Card | `5267 3181 8797 5449`, any future expiry, any CVV, OTP `1111` |
 | UPI (success) | `success@razorpay` |
 | UPI (failure) | `failure@razorpay` |
 | Net banking | any bank, then choose success or failure |
+
+Razorpay's widely quoted `4111 1111 1111 1111` is an **international** test card, and accounts
+without international payments enabled reject it outright. The domestic card above works everywhere.
+
+### Methods are discovered, not assumed
+
+Which methods an account accepts is a dashboard setting, not an integration detail — a test account
+commonly ships with UPI switched off. Offering it anyway would drop the customer into a modal that
+cannot complete, so `GET /api/payments/methods` asks the gateway (the same `preferences` endpoint
+Checkout.js reads) and the checkout greys out anything unavailable, explaining why. The answer is
+cached for five minutes, so enabling UPI in the dashboard takes effect on its own — no redeploy.
+
+Turn UPI on under **Razorpay Dashboard → Test Mode → Settings → Configuration → Payment Methods**.
 
 ### Why card details aren't collected by this app
 
@@ -550,7 +563,7 @@ relying on the demo data.
 |---|---|---|
 | Schema | `prisma db push` | `prisma migrate deploy` (migration in `server/prisma/migrations`) |
 | Refresh cookie | `SameSite=Lax` | `SameSite=None; Secure; Partitioned` — see below |
-| Payments | `mock` | `mock` + explicit `ALLOW_MOCK_PAYMENTS=true` |
+| Payments | `razorpay` (test keys) | `razorpay` (test keys, set in the host's dashboard) |
 | Seed | manual | once, only if the database has no products |
 
 **The cookie policy is derived from the deployment shape.** A static host and a service host are
@@ -559,10 +572,15 @@ split-domain deploy would have a sign-in that appears to work and then evaporate
 `server/src/config/cookies.ts` compares `CLIENT_URL` against `SERVER_URL` and switches to
 `SameSite=None; Secure` when they differ in production, keeping the stricter `Lax` locally.
 
-**Payments in the demo.** The server refuses to boot with `PAYMENT_MODE=mock` under
-`NODE_ENV=production` unless `ALLOW_MOCK_PAYMENTS=true` is set deliberately, and then it prints a
-loud banner on every boot. To take real payments: set `PAYMENT_MODE=razorpay`, add
-`RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`, and remove `ALLOW_MOCK_PAYMENTS`.
+**Payments in the demo.** The deployed API runs `PAYMENT_MODE=razorpay` against Razorpay's *test*
+keys: a real gateway, real signature verification, real refunds — settled against test credentials
+rather than money. `render.yaml` marks both keys `sync: false`, so the host prompts for them once
+and never keeps them in git.
+
+`ALLOW_MOCK_PAYMENTS` is deliberately absent. Without it the server refuses to boot with
+`PAYMENT_MODE=mock` under `NODE_ENV=production`, so a misconfigured deploy fails loudly instead of
+quietly accepting fake money. Going live is then a credential change, not a code change: swap the
+test key pair for the live one.
 
 ### Deploying elsewhere
 
