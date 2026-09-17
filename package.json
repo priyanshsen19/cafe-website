@@ -2,7 +2,7 @@
   "name": "alaap-cafe-platform",
   "private": true,
   "version": "1.0.0",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "description": "ALAAP \u2014 premium specialty coffee cafe ordering platform (delivery, pickup, dine-in QR, payments, kitchen ops, admin)",
   "workspaces": [
     "client",

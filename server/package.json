@@ -2,7 +2,7 @@
   "name": "server",
   "private": true,
   "version": "1.0.0",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "type": "commonjs",
   "main": "dist/index.js",
   "scripts": {

@@ -1,6 +1,6 @@
 # ALAAP — Coffee Roasters & Kitchen
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-1a1a1a.svg)](LICENSE)
+[![All rights reserved](https://img.shields.io/badge/License-All%20rights%20reserved-1a1a1a.svg)](LICENSE)
 
 A production-shaped ordering platform for a fictional premium specialty coffee café with rooms in
 Bengaluru, Mumbai and Hyderabad.
@@ -670,14 +670,15 @@ cart against a cookie-scoped session that merges into their account at login.
 
 ## License
 
-[MIT](LICENSE) — Copyright © 2026 Priyansh Sen.
+Copyright © 2026 Priyansh Sen. **All rights reserved.** See [LICENSE](LICENSE).
 
-You are free to use, copy, modify and redistribute this code, including commercially, on one
-condition: the copyright notice and licence text stay with it. Building on this project is welcome;
-removing the attribution and presenting it as original work is the one thing the licence forbids.
+This is a portfolio project, not an open-source one. You're welcome to read the code, and to clone
+and run it locally to see how it works — that is what it's here for. Nothing beyond that is granted:
+it may not be deployed, reused in another project, or presented as your own, in whole or in part,
+without written permission.
 
-The MIT grant covers the code. It does not extend to the ALAAP name and brand, the menu copy, or the
-Unsplash photography, each of which has its own terms — see below.
+The ALAAP brand, menu and copy are reserved on the same terms. Photography is from Unsplash and
+remains under the Unsplash Licence.
 
 ---
 
