@@ -569,24 +569,41 @@ a broken image.
 
 ## Deployment
 
-The repository ships a [`render.yaml`](render.yaml) blueprint that provisions all three pieces —
-Postgres, the API, and the static site — in one go.
+The API and static site run on Render from the [`render.yaml`](render.yaml) blueprint. The
+database runs on [Neon](https://neon.com) — Render's free Postgres expires after 30 days and is
+deleted shortly after, which is the wrong home for something that has to stay up. Neon's free plan
+doesn't expire; it suspends after five idle minutes and wakes on the next connection by itself.
+
+### Database (Neon)
+
+1. [neon.com](https://neon.com) → **New project**. Any name and region; Postgres 16 or later.
+2. **Connect** → choose **Prisma** from the framework list → copy the connection string.
+   Use the **direct** (unpooled) one — `prisma migrate deploy` can't run through a transaction
+   pooler.
+
+That's the whole setup. Nothing needs importing: the API builds the schema and seeds the demo
+catalogue itself on first boot.
 
 ### Render (blueprint)
 
 1. Push this repository to GitHub.
 2. Render → **New → Blueprint** → select the repository.
-3. Apply. Render creates `alaap-db`, `alaap-api` and `alaap-web`, generates the JWT secrets itself,
-   runs `prisma migrate deploy`, and seeds the demo catalogue on the empty database.
+3. Render prompts for `DATABASE_URL` (it's marked `sync: false`, so it's never stored in git). Paste
+   the Neon string.
+4. Apply. Render creates `alaap-api` and `alaap-web`, generates the JWT secrets itself, runs
+   `prisma migrate deploy`, and seeds the demo catalogue on the empty database.
 
 **One manual step.** The API needs the site's URL and the site needs the API's URL — that's circular,
 so the blueprint hard-codes `CLIENT_URL: https://alaap-web.onrender.com`. If Render assigns the
 static site a different hostname (because the name was taken), update `CLIENT_URL` on `alaap-api`.
 Until it matches, sign-in fails with a CORS error.
 
-**Free tier caveats.** Free web services sleep after ~15 minutes idle, so the first visit takes
-~30 seconds to wake. Free Postgres instances expire — check Render's current retention before
-relying on the demo data.
+**Free tier caveats.** Render's free web services sleep after ~15 minutes idle and take ~30 seconds
+to wake; Neon's compute adds well under a second on top. The first visit after a quiet spell is
+slow, and every visit after it is normal.
+
+**Moving to a different database later** is a credential change, not a migration: point
+`DATABASE_URL` at any empty Postgres and the next boot rebuilds everything, demo data included.
 
 ### What the deployment does differently
 

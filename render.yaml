@@ -1,8 +1,17 @@
 # ALAAP — Render blueprint
 #
-# Defines the whole platform: a Postgres database, the Express API, and the
-# React static site. Create it with Render → New → Blueprint, pointed at this
-# repository.
+# Defines the Express API and the React static site. Create it with
+# Render → New → Blueprint, pointed at this repository.
+#
+# ── The database lives elsewhere ───────────────────────────────────────────
+# Render's free Postgres expires after 30 days and is deleted a fortnight
+# later, which makes it the wrong home for a portfolio that has to stay up.
+# The API instead points at an external Postgres — Neon's free plan, which
+# does not expire — through DATABASE_URL, supplied once in the dashboard.
+#
+# Nothing needs migrating when the database changes: on every boot the API
+# runs `prisma migrate deploy` and, if the catalogue is empty, seeds it. Point
+# it at a blank database and it builds itself.
 #
 # ── One manual step ────────────────────────────────────────────────────────
 # The API needs to know the site's URL (for CORS and the cookie policy) and the
@@ -10,13 +19,6 @@
 # to the hostname Render assigns when `alaap-web` is available. If Render gives
 # the static site a different hostname, update CLIENT_URL on the alaap-api
 # service afterwards — sign-in will fail with a CORS error until it matches.
-
-databases:
-  - name: alaap-db
-    databaseName: alaap
-    user: alaap
-    plan: free
-    region: singapore
 
 services:
   # ── API ──────────────────────────────────────────────────────────────────
@@ -36,10 +38,10 @@ services:
       - key: NODE_ENV
         value: production
 
+      # The external Postgres connection string. Use the *direct* (unpooled)
+      # URL: Prisma's migrations can't run through a transaction pooler.
       - key: DATABASE_URL
-        fromDatabase:
-          name: alaap-db
-          property: connectionString
+        sync: false
 
       # Generated once by Render and never shown in the repository.
       - key: JWT_SECRET
