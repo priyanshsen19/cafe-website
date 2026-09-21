@@ -81,6 +81,11 @@ services:
       # Loads the demo menu only when the database has no products at all.
       - key: SEED_ON_EMPTY
         value: "true"
+      # Then keeps every dish's photograph and dietary marks in line with the
+      # seed data on each boot, so a catalogue correction reaches this database
+      # on the next deploy. Never touches prices, names or descriptions.
+      - key: CATALOGUE_SYNC_ON_BOOT
+        value: "true"
 
   # ── Static site ──────────────────────────────────────────────────────────
   - type: web

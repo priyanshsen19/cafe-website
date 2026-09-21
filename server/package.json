@@ -11,7 +11,7 @@
     "start": "node dist/index.js",
     "migrate:deploy": "prisma migrate deploy",
     "seed:if-empty": "tsx prisma/seed-if-empty.ts",
-    "start:prod": "prisma migrate deploy && npm run seed:if-empty && node dist/index.js",
+    "start:prod": "prisma migrate deploy && npm run seed:if-empty && npm run catalogue:sync:boot && node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
@@ -22,7 +22,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "catalogue:sync": "tsx scripts/sync-catalogue.ts"
+    "catalogue:sync": "tsx scripts/sync-catalogue.ts",
+    "catalogue:sync:boot": "tsx scripts/sync-catalogue.ts --on-boot"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

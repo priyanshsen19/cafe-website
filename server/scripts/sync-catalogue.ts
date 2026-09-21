@@ -13,12 +13,19 @@
  *
  *   npx tsx scripts/sync-catalogue.ts            # preview
  *   npx tsx scripts/sync-catalogue.ts --apply    # write
+ *
+ * It also runs at deploy time with `--on-boot`, gated behind
+ * CATALOGUE_SYNC_ON_BOOT=true, so a correction to the seed data reaches a
+ * long-lived database on the next deploy without anyone running anything.
+ * In that mode it applies, and it never fails the boot: a stale photograph is
+ * a far better outcome than a service that won't start.
  */
 import { PrismaClient } from '@prisma/client';
 import { img } from '../prisma/seed-data/images';
 import { MENU } from '../prisma/seed-data/menu';
 
-const apply = process.argv.includes('--apply');
+const onBoot = process.argv.includes('--on-boot');
+const apply = onBoot || process.argv.includes('--apply');
 const prisma = new PrismaClient();
 
 interface Wanted {
@@ -44,6 +51,11 @@ function describeTarget(): string {
 }
 
 async function main(): Promise<void> {
+  if (onBoot && process.env.CATALOGUE_SYNC_ON_BOOT !== 'true') {
+    console.log('[catalogue-sync] CATALOGUE_SYNC_ON_BOOT is not set — skipping.');
+    return;
+  }
+
   const wanted = new Map<string, Wanted>();
   for (const category of MENU) {
     for (const p of category.products) {
@@ -134,12 +146,13 @@ async function main(): Promise<void> {
   console.log(`  ✓ ${snapshots} snapshot(s) corrected`);
   console.log(`  ✓ ${after.length} products, ${distinct} distinct photographs, ${contradictions} egg-but-vegetarian contradictions\n`);
 
-  if (distinct !== after.length || contradictions > 0) process.exitCode = 1;
+  if (!onBoot && (distinct !== after.length || contradictions > 0)) process.exitCode = 1;
 }
 
 main()
   .catch((error) => {
     console.error('\n  Failed:', error instanceof Error ? error.message : error, '\n');
-    process.exitCode = 1;
+    // On boot this must never take the service down with it.
+    process.exitCode = onBoot ? 0 : 1;
   })
   .finally(() => prisma.$disconnect());

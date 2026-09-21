@@ -70,6 +70,18 @@ const schema = z.object({
     .optional()
     .default('false')
     .transform((value) => value === 'true'),
+
+  /**
+   * On boot, bring every product's photograph and dietary marks back in line
+   * with the seed data. The seed only runs on an empty database, so without
+   * this a correction to the catalogue never reaches a long-lived deployment.
+   * Prices, names and descriptions are never touched.
+   */
+  CATALOGUE_SYNC_ON_BOOT: z
+    .enum(['true', 'false'])
+    .optional()
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 const parsed = schema.safeParse(process.env);
