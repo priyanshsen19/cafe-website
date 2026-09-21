@@ -225,10 +225,43 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+interface DietaryFlags {
+  isVegetarian: boolean;
+  isVegan: boolean;
+  containsEgg: boolean;
+}
+
+/**
+ * The dietary marks have to agree with each other, because a customer trusts
+ * the green dot more than the small print. Indian convention — and FSSAI's
+ * marking rule — treats egg as non-vegetarian, so a dish can't be both green
+ * and eggy; and vegan is a stricter claim than vegetarian, not a parallel one.
+ *
+ * Checked on the *merged* state, since a partial update that only flips
+ * `containsEgg` is exactly how the contradiction would otherwise creep in.
+ */
+export function assertDietaryConsistency(flags: DietaryFlags): void {
+  if (flags.isVegetarian && flags.containsEgg) {
+    throw AppError.badRequest(
+      'A dish that contains egg can’t carry the vegetarian mark. Untick one of them.',
+      'DIETARY_CONFLICT',
+    );
+  }
+  if (flags.isVegan && (!flags.isVegetarian || flags.containsEgg)) {
+    throw AppError.badRequest('A vegan dish must also be vegetarian and egg-free.', 'DIETARY_CONFLICT');
+  }
+}
+
 export async function createProduct(input: ProductWriteInput) {
   const slug = input.slug?.trim() || slugify(input.name);
   const clash = await prisma.product.findUnique({ where: { slug } });
   if (clash) throw AppError.conflict('A dish with that name already exists.', 'SLUG_TAKEN');
+
+  assertDietaryConsistency({
+    isVegetarian: input.isVegetarian ?? true,
+    isVegan: input.isVegan ?? false,
+    containsEgg: input.containsEgg ?? false,
+  });
 
   const { modifierIds, ...data } = input;
 
@@ -247,6 +280,12 @@ export async function createProduct(input: ProductWriteInput) {
 export async function updateProduct(id: string, input: Partial<ProductWriteInput>) {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw AppError.notFound('We couldn’t find that dish.', 'PRODUCT_NOT_FOUND');
+
+  assertDietaryConsistency({
+    isVegetarian: input.isVegetarian ?? existing.isVegetarian,
+    isVegan: input.isVegan ?? existing.isVegan,
+    containsEgg: input.containsEgg ?? existing.containsEgg,
+  });
 
   const { modifierIds, ...data } = input;
 

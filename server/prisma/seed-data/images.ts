@@ -58,7 +58,7 @@ export const IMG = {
 
   // ── breakfast ─────────────────────────────────────────────────────────────
   avocadoToast: 'photo-1588137378633-dea1336ce1e2',
-  eggsBenedict: 'photo-1608039829572-78524f79c4c7',
+  eggsBenedict: 'photo-1767425315674-26de4751638f',
   scrambledEggs: 'photo-1733105666420-729679827ba1',
   frenchToast: 'photo-1484723091739-30a097e8f929',
   granola: 'photo-1488477181946-6428a0291777',
@@ -85,11 +85,11 @@ export const IMG = {
   mushroomMelt: 'photo-1617869725629-7291855efb89',
 
   // ── pasta ─────────────────────────────────────────────────────────────────
-  trufflePasta: 'photo-1595295333158-4742f28fbd85',
+  trufflePasta: 'photo-1473093226795-af9932fe5856',
   pestoPasta: 'photo-1567608285969-48e4bbe0d399',
-  arrabbiata: 'photo-1608756687911-aa1599ab3bd9',
+  arrabbiata: 'photo-1693609930476-5838e8584277',
   alfredo: 'photo-1645112411341-6c4fd023714a',
-  pasta: 'photo-1551183053-bf91a1d81141',
+  chickenAlfredo: 'photo-1563072915-8201ebcf6047',
   pastaAlt: 'photo-1473093295043-cdd812d0e601',
 
   // ── salads ────────────────────────────────────────────────────────────────

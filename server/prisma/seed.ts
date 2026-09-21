@@ -293,7 +293,11 @@ async function main() {
           ingredients: product.ingredients,
           allergens: product.allergens ?? [],
           tags: product.tags,
-          isVegetarian: !product.nonVeg,
+          // Indian convention, and FSSAI's marking rule: egg is non-vegetarian.
+          // A dish earns the green mark only if it has neither meat nor egg —
+          // `nonVeg` in the seed data means meat or fish, and egg is tracked
+          // separately so it can still be labelled.
+          isVegetarian: !product.nonVeg && !product.egg,
           isVegan: product.vegan ?? false,
           containsEgg: product.egg ?? false,
           containsNuts: product.nuts ?? false,

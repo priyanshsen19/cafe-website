@@ -1075,7 +1075,7 @@ export const MENU: SeedCategory[] = [
         slug: 'chicken-alfredo',
         description: 'Our alfredo with a grilled, rested chicken breast sliced over the top.',
         basePrice: 540,
-        image: IMG.pasta,
+        image: IMG.chickenAlfredo,
         calories: 890,
         prepTimeMinutes: 19,
         ingredients: ['fettuccine', 'chicken breast', 'parmesan', 'butter', 'black pepper'],

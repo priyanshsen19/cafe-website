@@ -42,7 +42,18 @@ const productSchema = z.object({
   isChefSpecial: z.boolean(),
   isSeasonal: z.boolean(),
   isAvailable: z.boolean(),
-});
+})
+  // Egg is non-vegetarian in India, so the green mark and the egg label can't
+  // both be true. The server enforces the same rule; this just says so before
+  // the form is sent.
+  .refine((v) => !(v.isVegetarian && v.containsEgg), {
+    message: 'A dish that contains egg can’t carry the vegetarian mark',
+    path: ['containsEgg'],
+  })
+  .refine((v) => !v.isVegan || (v.isVegetarian && !v.containsEgg), {
+    message: 'A vegan dish must also be vegetarian and egg-free',
+    path: ['isVegan'],
+  });
 
 type ProductFormValues = z.infer<typeof productSchema>;
 
@@ -528,6 +539,7 @@ function ProductDialog({
                     </label>
                   ))}
                 </div>
+                <FieldError>{errors.containsEgg?.message ?? errors.isVegan?.message}</FieldError>
               </fieldset>
 
               <fieldset>

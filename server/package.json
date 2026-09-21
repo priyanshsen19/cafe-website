@@ -22,7 +22,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "images:sync": "tsx scripts/sync-product-images.ts"
+    "catalogue:sync": "tsx scripts/sync-catalogue.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
